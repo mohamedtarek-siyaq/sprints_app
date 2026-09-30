@@ -63,9 +63,9 @@ const authed = {
     const to = String(b.to || '');
     const [g] = await sql`select a.gid from members a join members t on t.gid=a.gid where a.user_id=${uid} and t.user_id=${to}`;
     if (!g || to === uid) throw bad('That person is not in your group');
-    const id = uid + '_' + to + '_' + new Date().toISOString().slice(0, 10);
-    const r = await sql`insert into nudges(id,gid,from_id,to_id,at) values(${id},${g.gid},${uid},${to},${Date.now()}) on conflict do nothing returning id`;
-    return { already: !r.length };
+    const id = uid + '_' + to + '_' + Date.now();
+    await sql`insert into nudges(id,gid,from_id,to_id,at) values(${id},${g.gid},${uid},${to},${Date.now()})`;
+    return { already: false };
   },
   async log(uid, b) {
     const s = Math.round(+b.s), m = Math.round(+b.m);
@@ -121,9 +121,9 @@ const authed = {
     const to = String(b.to || '');
     const [g] = await sql`select a.gid from members a join members t on t.gid=a.gid where a.user_id=${uid} and t.user_id=${to}`;
     if (!g || to === uid) throw bad('That person is not in your group');
-    const id = uid + '_' + to + '_' + new Date().toISOString().slice(0, 10);
-    const r = await sql`insert into cheers(id,gid,from_id,to_id,at) values(${id},${g.gid},${uid},${to},${Date.now()}) on conflict do nothing returning id`;
-    return { already: !r.length };
+    const id = uid + '_' + to + '_' + Date.now();
+    await sql`insert into cheers(id,gid,from_id,to_id,at) values(${id},${g.gid},${uid},${to},${Date.now()})`;
+    return { already: false };
   },
   async seen(uid) {
     await sql`update nudges set seen=true where to_id=${uid}`;
