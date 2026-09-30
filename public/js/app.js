@@ -56,9 +56,11 @@ function courseCard(uid, courseObj){
    acts.push(h('button',{on:{click:()=>cheatFormFor(cid)}},courseObj.cheat?'Cheat sheet ✓':'Add cheat sheet'));
    acts.push(h('button',{disabled:courseObj.cheat?null:'',title:courseObj.cheat?'':'Attach a cheat sheet first',on:{click:()=>completeFor(cid)}},'Mark complete'));
   }
+  acts.push(h('button',{on:{click:pgForm}},'🎯 My goal'));
   acts.push(h('button',{style:'color:var(--err,#d33)',on:{click:()=>deleteCourse(cid)}},'✕ Delete'));
  }else{
-  if(s.st==='behind')acts.push(h('button',{on:{click:()=>nudge(uid)}},'👋 Nudge'));
+  acts.push(h('button',{on:{click:()=>nudge(uid)}},'👋 Nudge'));
+  acts.push(h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer'));
   if(courseObj.cheat)acts.push(h('button',{on:{click:()=>viewCheatFor(uid,courseObj)}},'View cheat sheet'));
  }
  return h('div',{class:'card'},
@@ -78,16 +80,11 @@ function card(uid){
  const courses=m.courses&&m.courses.length?m.courses:[{id:'c_'+uid+'_0',totalMins:0}];
  const cards=courses.map(co=>courseCard(uid,co));
  if(own){
-  return h('div',{},
+  return h('div',{class:'member-block'},
    ...cards,
-   h('div',{class:'card-footer'},
-    h('div',{class:'row'},h('button',{on:{click:pgForm}},'🎯 My goal')),
-    h('button',{class:'add-course-btn',on:{click:addNewCourse}},'+ Add another course')));
+   h('button',{class:'add-course-btn',on:{click:addNewCourse}},'+ Add another course'));
  }
- return h('div',{},...cards,
-  h('div',{class:'card-footer'},
-   h('div',{}),
-   h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')));
+ return h('div',{class:'member-block'},...cards);
 }
 
 function render(){
@@ -96,8 +93,6 @@ function render(){
  const lead=G.leaderId===me.id;
  const feed=[];for(const uid of G.members)for(const s of ((M[uid]||{}).sessions||[]))if(Date.now()-s.s<6048e5){const co=(M[uid].courses||[]).find(c=>(c.sessions||[]).some(x=>x.s===s.s));feed.push({uid,...s,c:co&&co.course?co.course.title:null});}
  feed.sort((x,y)=>y.s-x.s);
- // phone contact button
- const phoneBtn=G.phone?h('a',{href:'https://wa.me/'+G.phone.replace(/\D/g,''),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact')):null;
  put(a,
   h('header',{},
    h('div',{class:'header-top'},
@@ -106,7 +101,6 @@ function render(){
      h('button',{on:{click:bell}},'🔔 '+(N.length+C.length)),
      lead?h('button',{on:{click:goalForm}},'Edit goal'):null,
      h('button',{on:{click:()=>{try{navigator.clipboard.writeText(G.code);toast('Code copied')}catch(e){toast(G.code)}}}},'Copy code'),
-     phoneBtn,
      h('button',{on:{click:theme}},'◐ Theme'),h('button',{'aria-label':'Settings',on:{click:settings}},'⚙'),h('button',{on:{click:logout}},'Log out'))),
    h('div',{class:'header-nav'},nav())),
   tab==='now'&&recap(),
@@ -304,12 +298,30 @@ function pdfsView(){
    h('div',{},'No links yet.'),
    h('div',{},'Be the first — click '),h('button',{class:'p',style:'display:inline',on:{click:addForm}},'+ Add link')))}
 
+let PREVIEW=null;
 function gate(){
+ PREVIEW=null;
  const n=h('input',{placeholder:'Group name'});
  const goalH=h('input',{type:'number',min:1,max:100,placeholder:'Weekly goal (hours, e.g. 15)',value:'15'});
  const phone=h('input',{type:'tel',placeholder:'WhatsApp number (e.g. 201012345678)'});
- const c=h('input',{placeholder:'Invite code'});
- const go=(a,d)=>async()=>{try{await api(a,d());view='';refresh()}catch(e){toast(e.message)}};
+ const c=h('input',{placeholder:'Group code'});
+ const previewResult=h('div',{});
+ const updatePreview=()=>{
+  if(!PREVIEW){put(previewResult);return}
+  const p=PREVIEW;
+  const contactBtn=p.phone?h('a',{href:'https://wa.me/'+p.phone.replace(/\D/g,''),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact leader')):h('div',{class:'sub'},'No contact set by leader — ask them for the code directly.');
+  put(previewResult,
+   h('div',{class:'card',style:'margin-top:8px;display:grid;gap:8px'},
+    h('div',{class:'row',style:'justify-content:space-between'},
+     h('strong',{},p.name),
+     h('span',{class:'tag'},p.membersCount+' member'+(p.membersCount===1?'':'s'))),
+    h('div',{class:'sub'},'Goal: '+fmt(p.goal)+'/week · Leader: '+(p.leaderName||'—')),
+    contactBtn,
+    h('button',{class:'p',on:{click:async()=>{try{await api('join',{code:p.id});PREVIEW=null;view='';refresh()}catch(e){toast(e.message)}}}},'✓ Join this group')));
+ };
+ updatePreview();
+ const goCreate=async()=>{try{await api('create',{name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()});view='';refresh()}catch(e){toast(e.message)}};
+ const goPreview=async()=>{try{const r=await api('preview',{code:c.value});PREVIEW=r;updatePreview()}catch(e){PREVIEW=null;updatePreview();toast(e.message)}};
  $('#app').replaceChildren(
   h('header',{class:'header-top'},h('h1',{},'Cohort'),h('button',{on:{click:logout}},'Log out')),
   h('p',{class:'sub'},'Study together. Small weekly goal, everyone can see progress.'),
@@ -318,12 +330,14 @@ function gate(){
     h('strong',{},'Create a group'),
     n,
     h('label',{},'Weekly goal (hours)'),goalH,
-    h('label',{},'WhatsApp contact number (optional)'),phone,
-    h('button',{class:'p',on:{click:go('create',()=>({name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()}))}},'Create')),
+    h('label',{},'WhatsApp contact number (so others can request the code)'),phone,
+    h('button',{class:'p',on:{click:goCreate}},'Create')),
    h('div',{class:'card',style:'display:grid;gap:10px'},
-    h('strong',{},'Join with a code'),
+    h('strong',{},'Preview & join a group'),
+    h('div',{class:'sub'},'Enter the group code to see details and contact the leader for the code.'),
     c,
-    h('button',{class:'p',on:{click:go('join',()=>({code:c.value}))}},'Join'))))}
+    h('button',{class:'p',on:{click:goPreview}},'Preview group'),
+    previewResult)))}
 function auth(){clearInterval(poll);me=null;view='auth';
  const u=h('input',{placeholder:'Username',autocomplete:'username'}),p=h('input',{type:'password',placeholder:'Password (6+ characters)',autocomplete:'current-password'});
  const go=a=>async()=>{try{await api(a,{username:u.value,password:p.value});begin()}catch(e){toast(e.message)}};

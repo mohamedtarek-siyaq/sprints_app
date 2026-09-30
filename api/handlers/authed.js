@@ -25,6 +25,13 @@ const authed = {
     await sql`insert into groups(id,name,leader_id,goal,days,phone) values(${code},${name},${uid},${goalMins},'[0,1,2,3,4]'::jsonb,${phone||null})`;
     await sql`insert into members(user_id,gid) values(${uid},${code})`; return { ok: 1 };
   },
+  async preview(uid, b) {
+    const code = String(b.code || '').trim().toLowerCase(); if (!code) throw bad('Code required');
+    const [g] = await sql`select id,name,goal,days,phone from groups where id=${code}`; if (!g) throw bad('No group with that code', 404);
+    const [{ n }] = await sql`select count(*)::int as n from members where gid=${code}`;
+    const [l] = await sql`select u.username as leader_name from members m join users u on u.id=m.user_id where m.gid=${code} and m.user_id=g.leader_id`;
+    return { id: g.id, name: g.name, goal: g.goal, days: g.days, phone: g.phone || null, membersCount: n, leaderName: l ? l.leader_name : null };
+  },
   async join(uid, b) {
     const code = String(b.code || '').trim().toLowerCase();
     if (!(await sql`select 1 from groups where id=${code}`).length) throw bad('No group with that code', 404);
