@@ -20,6 +20,7 @@ const init = () => ready || (ready = (async () => {
   await sql`create table if not exists cheers(id text primary key, gid text not null, from_id text not null, to_id text not null, at bigint not null)`;
   await sql`alter table cheers add column if not exists seen boolean not null default false`;
   await sql`create table if not exists nudges(id text primary key, gid text not null, from_id text not null, to_id text not null, at bigint not null, seen boolean not null default false)`;
+  await sql`create table if not exists pdf_links(id bigserial primary key, gid text not null, user_id text not null, title text not null, url text not null, at bigint not null)`;
 })());
 
 const sign = s => c.createHmac('sha256', SECRET).update(s).digest('hex');

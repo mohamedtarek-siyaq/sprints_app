@@ -130,6 +130,26 @@ const authed = {
     await sql`update cheers set seen=true where to_id=${uid}`;
     return { ok: 1 };
   },
+  async listpdfs(uid) {
+    const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) return { pdfs: [] };
+    const pdfs = await sql`select p.id, p.title, p.url, p.at, u.username as added_by from pdf_links p join users u on u.id=p.user_id where p.gid=${m.gid} order by p.at desc limit 200`;
+    return { pdfs };
+  },
+  async addpdf(uid, b) {
+    const title = String(b.title || '').trim().slice(0, 120); if (!title) throw bad('Title required');
+    const url = String(b.url || '').trim(); if (!/^https?:\/\//i.test(url) || url.length > 1000) throw bad('Enter a valid URL');
+    const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) throw bad('Join a group first');
+    const [row] = await sql`insert into pdf_links(gid,user_id,title,url,at) values(${m.gid},${uid},${title},${url},${Date.now()}) returning id,title,url,at`;
+    return { ok: 1, pdf: { ...row, added_by: '' } };
+  },
+  async delpdf(uid, b) {
+    const id = Math.round(+b.id); if (!id) throw bad('Invalid id');
+    const [m] = await sql`select gid from members where user_id=${uid}`;
+    const [g] = await sql`select leader_id from groups where id=${m && m.gid}`;
+    const r = await sql`delete from pdf_links where id=${id} and gid=${m && m.gid} and (user_id=${uid} or ${(g && g.leader_id) === uid}::boolean) returning id`;
+    if (!r.length) throw bad('Not found or no permission', 403);
+    return { ok: 1 };
+  },
 };
 
 module.exports = authed;

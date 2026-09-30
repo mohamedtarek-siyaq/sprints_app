@@ -1,4 +1,4 @@
-const $=s=>document.querySelector(s);
+﻿const $=s=>document.querySelector(s);
 function h(t,a,...k){const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(v==null||v===false)continue;if(n==='on')for(const[ev,f]of Object.entries(v))e.addEventListener(ev,f);else if(n==='class')e.className=v;else e.setAttribute(n,v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(c));return e}
 const DN=['Su','Mo','Tu','We','Th','Fr','Sa'],WS=0; // week starts Sunday (work week Sun–Thu)
 let me,G=null,M={},N=[],C=[],notified=new Set(),names={},first=true,tt,prev={},view='',poll,HIST=null,tab='now',LAST={},lastFocus,lastSig='',offline=false;
@@ -72,9 +72,9 @@ function render(){
     h('button',{on:{click:()=>{try{navigator.clipboard.writeText(G.code);toast('Code copied')}catch(e){toast(G.code)}}}},'Copy code'),
     h('button',{on:{click:theme}},'◐ Theme'),h('button',{'aria-label':'Settings',on:{click:settings}},'⚙'),h('button',{on:{click:logout}},'Log out'))),
   tab==='now'&&recap(),
-  tab==='hist'?histView():tab==='board'?boardView():h('div',{class:'grid'},G.members.map(card)),
+  tab==='hist'?histView():tab==='board'?boardView():tab==='pdfs'?pdfsView():h('div',{class:'grid'},G.members.map(card)),
   tab==='now'&&h('h2',{},'Recent activity'),
-  tab==='now'&&h('div',{class:'feed'},feed.length?feed.slice(0,8).map(f=>h('div',{},nm(f.uid)+' logged '+fmt(f.m)+(f.c?' · '+f.c:'')+' — '+new Date(f.s).toLocaleDateString(undefined,{weekday:'short'}))):h('div',{class:'sub'},'Nothing logged yet this week. Be the first.')))
+  tab==='now'&&h('div',{class:'feed'},(()=>{const items=[...feed.slice(0,8).map(f=>h('div',{},nm(f.uid)+' logged '+fmt(f.m)+(f.c?' \u00b7 '+f.c:'')+' \u2014 '+new Date(f.s).toLocaleDateString(undefined,{weekday:'short'})))];if(PDFS&&PDFS.pdfs)PDFS.pdfs.filter(p=>Date.now()-+p.at<6048e5).slice(0,3).forEach(p=>items.unshift(h('div',{},'📄 '+p.added_by+' added: ',h('a',{href:p.url,target:'_blank',rel:'noopener noreferrer'},p.title),' \u2014 '+new Date(+p.at).toLocaleDateString(undefined,{weekday:'short'}))));return items.length?items:h('div',{class:'sub'},'Nothing logged yet this week. Be the first.')})()))
  tick()}
 
 const PRE={'25/5':[25,5],'50/10':[50,10],'90/15':[90,15]};let pre='25/5',lb='week';
@@ -108,7 +108,8 @@ function tick(){if(!me||!G)return;const now=Date.now();document.querySelectorAll
 setInterval(tick,1000);
 function pgForm(){const t=h('input',{maxlength:120,placeholder:'e.g. Finish the SQL course by Thursday'});t.value=(mine().pg||{}).text||'';modal('My goal',h('div',{class:'sub'},'Your teammates see this on your card and can cheer you on.'),t,h('div',{class:'row'},h('button',{class:'p',on:{click:()=>{save({pg:{text:t.value.trim().slice(0,120)}});closeM()}}},'Save'),h('button',{on:{click:closeM}},'Cancel')));t.focus()}
 async function cheer(uid){try{const r=await api('cheer',{to:uid});toast(r.already?'You already cheered '+nm(uid)+' today':'👏 Cheered '+nm(uid));refresh()}catch(e){toast(e.message)}}
-const nav=()=>[['now','Team'],['board','🏆 Board'],['hist','History']].map(([t,l])=>h('button',{class:tab===t?'p':'',on:{click:()=>{tab=t;t==='now'?render():loadHist()}}},l));
+let PDFS=null;
+const nav=()=>[['now','Team'],['board','🏆 Board'],['hist','History'],['pdfs','📄 Cheatsheets']].map(([t,l])=>h('button',{class:tab===t?'p':'',on:{click:()=>{tab=t;if(t==='pdfs')loadPdfs();else if(t!=='now')loadHist();else render()}}},l));
 const wkOf=t=>{const d=new Date(+t);d.setHours(0,0,0,0);d.setDate(d.getDate()-(d.getDay()-WS+7)%7);return d.getTime()};
 function aggr(){const W={},T={};for(const x of HIST.sessions){const w=wkOf(x.s),m=Number(x.m);W[w]=W[w]||{};W[w][x.uid]=(W[w][x.uid]||0)+m;T[x.uid]=(T[x.uid]||0)+m}return{W,T,weeks:Object.keys(W).map(Number).sort((a,b)=>b-a)}}
 function boardView(){if(!HIST)return h('p',{class:'sub'},'Loading leaderboard…');
@@ -178,6 +179,30 @@ function histView(){if(!HIST)return h('p',{class:'sub'},'Loading history…');
   mySess(),h('h2',{},'Completed courses'),
   HIST.done.length?h('div',{class:'feed'},HIST.done.map(d=>h('div',{},nm(d.uid)+' — '+d.title+(d.domain?' · '+d.domain:'')+' — '+new Date(+d.at).toLocaleDateString()+(d.cheat_name?' — 📄 '+d.cheat_name:'')))):h('div',{class:'sub'},'None yet.'))}
 async function loadHist(){render();try{HIST=await api('history')}catch(e){toast(e.message)}render()}
+async function loadPdfs(){render();try{PDFS=await api('listpdfs')}catch(e){toast(e.message)}render()}
+function pdfsView(){
+ const lead=G.leaderId===me.id;
+ const addForm=()=>{
+  const t=h('input',{placeholder:'Title (e.g. Week 3 Cheatsheet)',maxlength:120}),u=h('input',{placeholder:'Google Drive or direct PDF link',type:'url'});
+  modal('Add PDF / Cheatsheet link',t,u,h('div',{class:'sub'},'Paste any https:// link — Drive, Notion, direct PDF, etc.'),h('div',{class:'row'},h('button',{class:'p',on:{click:async()=>{const tv=t.value.trim(),uv=u.value.trim();if(!tv||!uv)return toast('Fill in both fields');try{const r=await api('addpdf',{title:tv,url:uv});PDFS.pdfs.unshift({id:r.pdf&&r.pdf.id||Date.now(),title:tv,url:uv,at:Date.now(),added_by:me.name||'you'});closeM();render();toast('Link added ✓')}catch(e){toast(e.message)}}}},'Add'),h('button',{on:{click:closeM}},'Cancel')));t.focus()};
+ const pdfs=PDFS?PDFS.pdfs:null;
+ if(!pdfs)return h('p',{class:'sub'},'Loading…');
+ return h('div',{},
+  h('div',{class:'row',style:'justify-content:space-between;margin-bottom:4px'},
+   h('h2',{style:'margin:0'},'📄 Group Cheatsheets'),
+   h('button',{class:'p',on:{click:addForm}},'+ Add link')),
+  h('div',{class:'sub',style:'margin-bottom:16px'},'Shared resources for everyone in the group. Click any title to open.'),
+  pdfs.length?h('div',{class:'pdf-list'},pdfs.map(p=>h('div',{class:'pdf-item'},
+   h('div',{class:'pdf-icon'},'📄'),
+   h('div',{class:'pdf-body'},
+    h('a',{class:'pdf-title',href:p.url,target:'_blank',rel:'noopener noreferrer'},p.title),
+    h('div',{class:'sub pdf-meta'},
+     'Added by '+p.added_by+' · '+new Date(+p.at).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}))),
+   (p.added_by===me.name||lead)?h('button',{class:'pdf-del',title:'Delete',on:{click:async()=>{if(!confirm('Remove "'+p.title+'"?'))return;try{await api('delpdf',{id:p.id});PDFS.pdfs=PDFS.pdfs.filter(x=>x.id!==p.id);render();toast('Removed')}catch(e){toast(e.message)}}}},'✕'):null))):h('div',{class:'sub','style':'margin-top:20px;text-align:center'},
+   h('div',{style:'font-size:48px;margin-bottom:12px'},'📂'),
+   h('div',{},'No links yet.'),
+   h('div',{},'Be the first — click '),h('button',{class:'p',style:'display:inline',on:{click:addForm}},'+ Add link')))}
+
 function gate(){
  const n=h('input',{placeholder:'Group name'}),c=h('input',{placeholder:'Invite code'});
  const go=(a,d)=>async()=>{try{await api(a,d());view='';refresh()}catch(e){toast(e.message)}};
