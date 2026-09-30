@@ -1,0 +1,7 @@
+{
+  "name": "cohort",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": { "test": "node --test tests/logic.test.js tests/api.test.js tests/ui.test.js" },
+  "dependencies": { "@neondatabase/serverless": "^1.0.0" }
+}
