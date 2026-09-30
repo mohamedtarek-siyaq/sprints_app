@@ -14,6 +14,7 @@ const init = () => ready || (ready = (async () => {
   await sql`create table if not exists sessions(user_id text not null, s bigint not null, m int not null, primary key(user_id, s))`;
   await sql`create table if not exists done_courses(id bigserial primary key, user_id text not null, title text not null, domain text, at bigint not null)`;
   await sql`alter table members add column if not exists pgoal jsonb`;
+  await sql`alter table members add column if not exists courses jsonb default '[]'::jsonb`;
   await sql`alter table members add column if not exists cheat_data text`;
   await sql`alter table done_courses add column if not exists cheat_name text`;
   await sql`create table if not exists attempts(username text not null, at bigint not null)`;

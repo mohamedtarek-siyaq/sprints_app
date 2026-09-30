@@ -27,37 +27,66 @@ async function api(a,d){
   if (bg && app) { app.style.pointerEvents = ''; app.style.opacity = '1'; }
  }
 }
-const mine=()=>M[me.id]||{sessions:[],course:null,running:null,cheat:null};
+const mine=()=>M[me.id]||{sessions:[],courses:[],running:null,cheat:null};
+// Save a per-course patch
+async function saveC(cid,coursePatch){const old=JSON.parse(JSON.stringify(M[me.id]||{}));const cur=mine();const courses=cur.courses||[];const idx=courses.findIndex(c=>c.id===cid);const c=idx>=0?{...courses[idx]}:{id:cid,totalMins:0};Object.assign(c,coursePatch);const updated=[...courses];if(idx>=0)updated[idx]=c;else updated.push(c);M[me.id]={...cur,courses:updated};render();try{await api('save',{patch:{courseId:cid,coursePatch}})}catch(e){M[me.id]=old;render();toast(e.message)}}
+async function deleteCourse(cid){if(!confirm('Delete this course? Its study time stays in your history.'))return;const cur=mine();const updated=(cur.courses||[]).filter(c=>c.id!==cid);M[me.id]={...cur,courses:updated};render();try{await api('save',{patch:{deleteCourseId:cid}})}catch(e){toast(e.message);render();}}
 async function save(patch){const old=M[me.id];M[me.id]={...mine(),...patch};render();try{await api('save',{patch})}catch(e){M[me.id]=old;render();toast(e.message)}}
 
 function ring(p,uid){const c=2*Math.PI*26,s=h('span');s.innerHTML='<svg class="ring" role="img" aria-label="Weekly progress" width="64" height="64" viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="26"/><circle class="fg" cx="32" cy="32" r="26" transform="rotate(-90 32 32)" stroke-dasharray="'+c+'" stroke-dashoffset="'+c*(1-Math.min(prev[uid]||0,1))+'"/></svg>';const f=s.querySelector('.fg');requestAnimationFrame(()=>requestAnimationFrame(()=>f.style.strokeDashoffset=c*(1-Math.min(p,1))));prev[uid]=p;return s}
 const fmt=m=>m>=60?Math.floor(m/60)+'h '+(m%60)+'m':m+'m';
 
-function card(uid){const m=M[uid]||{sessions:[],course:null,running:null,cheat:null},s=stats(m),own=uid===me.id,c=m.course;
+function courseCard(uid, courseObj){
+ const m=M[uid]||{sessions:[],courses:[],running:null};
+ const s=stats(m);
+ const own=uid===me.id;
+ const c=courseObj.course||null;
+ const cid=courseObj.id;
+ const isRunningHere=courseObj.running!=null;
  const label={done:'✓ Done',ok:'○ On track',behind:'! Behind'}[s.st];
  const acts=[];
  if(own){
-  if(!c||c.status==='complete')acts.push(h('button',{class:'p',on:{click:courseForm}},c?'Start new course':'Add your course'));
-  else{
-   acts.push(h('button',{on:{click:courseForm}},'Edit course'));
-   acts.push(...timerBtns(m.running));
-   acts.push(h('button',{on:{click:()=>add(15)}},'+15'),h('button',{on:{click:()=>add(30)}},'+30'),h('button',{on:{click:manual}},'Manual'));
-   acts.push(h('button',{on:{click:cheatForm}},m.cheat?'Cheat sheet ✓':'Add cheat sheet'));
-   acts.push(h('button',{disabled:m.cheat?null:'',title:m.cheat?'':'Attach a cheat sheet first',on:{click:complete}},'Mark complete'));
+  if(!c||c.status==='complete'){
+   acts.push(h('button',{class:'p',on:{click:()=>courseFormFor(cid)}},c?'Start new course':'Set course'));
+  }else{
+   acts.push(h('button',{on:{click:()=>courseFormFor(cid)}},'Edit course'));
+   acts.push(...timerBtnsFor(courseObj.running,cid));
+   acts.push(h('button',{on:{click:()=>addTo(15,cid)}},'+15'),h('button',{on:{click:()=>addTo(30,cid)}},'+30'),h('button',{on:{click:()=>manualFor(cid)}},'Manual'));
+   acts.push(h('button',{on:{click:()=>cheatFormFor(cid)}},courseObj.cheat?'Cheat sheet ✓':'Add cheat sheet'));
+   acts.push(h('button',{disabled:courseObj.cheat?null:'',title:courseObj.cheat?'':'Attach a cheat sheet first',on:{click:()=>completeFor(cid)}},'Mark complete'));
   }
+  acts.push(h('button',{style:'color:var(--err,red)',on:{click:()=>deleteCourse(cid)}},'✕ Delete'));
  }else{
   if(s.st==='behind')acts.push(h('button',{on:{click:()=>nudge(uid)}},'👋 Nudge'));
-  if(m.cheat)acts.push(h('button',{on:{click:()=>viewCheat(uid)}},'View cheat sheet'));
+  if(courseObj.cheat)acts.push(h('button',{on:{click:()=>viewCheatFor(uid,courseObj)}},'View cheat sheet'));
  }
- if(own)acts.push(h('button',{on:{click:pgForm}},'🎯 My goal'));else acts.push(h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer'));
  return h('div',{class:'card'},
   h('div',{class:'top'},ring(s.mins/G.goal,uid),h('div',{},
    h('div',{class:'name'},nm(uid)+(own?' (you)':'')),
-   h('div',{class:'sub'},c?c.title+(c.domain?' · '+c.domain:'')+(c.status==='complete'?' — completed':''):'No course yet'),
-   h('div',{class:'sub'},fmt(s.mins)+' of '+fmt(G.goal)),m.pg&&m.pg.text?h('div',{class:'sub'},'🎯 '+m.pg.text):null,
-   h('span',{class:'tag'},label),' ',m.cheers?h('span',{class:'tag'},'👏 '+m.cheers):null,' ',m.running?h('span',{class:'tag live','data-uid':uid},runLabel(uid)):null)),
+   h('div',{class:'sub'},c?c.title+(c.domain?' · '+c.domain:'')+(c.status==='complete'?' ✓ completed':''):'No course set'),
+   h('div',{class:'sub'},fmt(s.mins)+' / '+fmt(G.goal)+' this week'),
+   m.pg&&m.pg.text?h('div',{class:'sub'},'🎯 '+m.pg.text):null,
+   h('span',{class:'tag'},label),' ',m.cheers?h('span',{class:'tag'},'👏 '+m.cheers):null,
+   ' ',courseObj.running?h('span',{class:'tag live','data-cid':cid},runLabelFor(courseObj.running)):null)),
   h('div',{class:'dots'},G.days.slice().sort((a,b)=>((a-WS+7)%7)-((b-WS+7)%7)).map(d=>h('div',{class:'dot'+(s.days.has(d)?' on':'')},DN[d]))),
   h('div',{class:'row'},acts))}
+
+function card(uid){
+ const m=M[uid]||{sessions:[],courses:[],running:null};
+ const own=uid===me.id;
+ const courses=m.courses&&m.courses.length?m.courses:[{id:'c_'+uid+'_0',totalMins:0}];
+ const cards=courses.map(co=>courseCard(uid,co));
+ // Add-course button for self
+ if(own){
+  const addBtn=h('button',{class:'p',style:'width:100%;margin-top:8px',on:{click:addNewCourse}},'+ Add another course');
+  return h('div',{},
+   h('div',{class:'row',style:'justify-content:space-between;align-items:center;margin-bottom:4px'},
+    h('div',{class:'row'},h('button',{on:{click:pgForm}},'🎯 My goal'),h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')),null),
+   ...cards,addBtn);
+ }
+ return h('div',{},...cards,
+  h('div',{class:'row',style:'justify-content:flex-end'},h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')))
+}
 
 function render(){
  const a=$('#app');if(!G){return}
@@ -88,44 +117,57 @@ const mmss=ms=>{const t=Math.max(0,Math.ceil(ms/1e3));return Math.floor(t/60)+':
 function runLabel(uid){const now=Date.now(),r=adv((M[uid]||{}).running,now);if(!r)return'';const t=fmt(Math.floor(studied(r,now)/6e4));
  if(r.pomo){if(r.ph==='work')return'🍅 focus '+mmss(r.pt+r.pomo.w*6e4-now)+' · '+t;if(r.ph==='break')return'☕ break '+mmss(r.pt+r.pomo.b*6e4-now)+' · '+t;return'☕ next round? · '+t}
  return r.seg?'● studying now · '+t:'⏸ on a break · '+t}
-const setRun=r=>save({running:r});
-function start(){const n=Date.now();setRun({s:n,acc:0,seg:n,pomo:null})}
-function startPomo(){const[w,b]=PRE[pre],n=Date.now();setRun({s:n,acc:0,seg:n,pomo:{w,b},ph:'work',pt:n})}
-function pause(){const r=mine().running,n=Date.now();setRun({...r,acc:r.acc+n-r.seg,seg:null})}
-function resume(){setRun({...mine().running,seg:Date.now()})}
-function nextRound(){const n=Date.now();setRun({...adv(mine().running,n),seg:n,ph:'work',pt:n})}
-function stop(){const r0=mine().running;if(!r0)return;const n=Date.now(),r=adv(r0,n),raw=Math.round(studied(r,n)/6e4),m=Math.min(240,raw);
- M[me.id]={...mine(),running:null,sessions:m>0?[...mine().sessions,{s:r0.s,m}]:mine().sessions};render();
- if(m>0)api('log',{s:r0.s,m,stop:1}).catch(e=>toast(e.message));else save({running:null});
+// Per-course timer helpers
+function runLabelFor(r0){if(!r0)return'';const now=Date.now(),r=adv(r0,now);const t=fmt(Math.floor(studied(r,now)/6e4));
+ if(r.pomo){if(r.ph==='work')return'🍅 focus '+mmss(r.pt+r.pomo.w*6e4-now)+' · '+t;if(r.ph==='break')return'☕ break '+mmss(r.pt+r.pomo.b*6e4-now)+' · '+t;return'☕ next round? · '+t}
+ return r.seg?'● studying now · '+t:'⏸ on a break · '+t}
+function startFor(cid){const n=Date.now();saveC(cid,{running:{s:n,acc:0,seg:n,pomo:null}})}
+function startPomoFor(cid){const[w,b]=PRE[pre],n=Date.now();saveC(cid,{running:{s:n,acc:0,seg:n,pomo:{w,b},ph:'work',pt:n}})}
+function pauseFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);if(!co||!co.running)return;const r=co.running,n=Date.now();saveC(cid,{running:{...r,acc:r.acc+n-r.seg,seg:null}})}
+function resumeFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);if(!co||!co.running)return;saveC(cid,{running:{...co.running,seg:Date.now()}})}
+function nextRoundFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);if(!co||!co.running)return;const n=Date.now();saveC(cid,{running:{...adv(co.running,n),seg:n,ph:'work',pt:n}})}
+function stopFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);const r0=co&&co.running;if(!r0)return;const n=Date.now(),r=adv(r0,n),raw=Math.round(studied(r,n)/6e4),m=Math.min(240,raw);
+ const cur=mine();const courses=(cur.courses||[]).map(c=>c.id===cid?{...c,running:null,sessions:m>0?[...(c.sessions||[]),{s:r0.s,m}]:(c.sessions||[])}:c);
+ M[me.id]={...cur,courses,sessions:m>0?[...cur.sessions,{s:r0.s,m}]:cur.sessions};render();
+ if(m>0)api('log',{s:r0.s,m,stop:1}).catch(e=>toast(e.message));else saveC(cid,{running:null});
  toast(raw>240?'Timer ran long — capped at 4h':m>0?'Logged '+fmt(m):'Under a minute — not logged')}
+function timerBtnsFor(r0,cid){const r=adv(r0,Date.now());
+ if(!r0)return[h('button',{class:'p',on:{click:()=>startFor(cid)}},'▶ Start timer'),h('button',{on:{click:()=>startPomoFor(cid)}},'🍅 Pomodoro'),(()=>{const s=h('select',{style:'width:auto',title:'Focus / break minutes'},Object.keys(PRE).map(k=>h('option',{value:k,selected:k===pre?'':null},k)));s.addEventListener('change',()=>{pre=s.value});return s})()];
+ const o=[];
+ if(r.pomo){if(r.ph==='ready')o.push(h('button',{class:'p',on:{click:()=>nextRoundFor(cid)}},'▶ Next round'));else if(r.ph==='break')o.push(h('button',{on:{click:()=>nextRoundFor(cid)}},'Skip break'))}
+ else o.push(r.seg?h('button',{on:{click:()=>pauseFor(cid)}},'⏸ Break'):h('button',{class:'p',on:{click:()=>resumeFor(cid)}},'▶ Resume'));
+ o.push(h('button',{on:{click:()=>stopFor(cid)}},'■ Stop & log'));return o}
 function timerBtns(r0){const r=adv(r0,Date.now());
  if(!r0)return[h('button',{class:'p',on:{click:start}},'▶ Start timer'),h('button',{on:{click:startPomo}},'🍅 Pomodoro'),(()=>{const s=h('select',{style:'width:auto',title:'Focus / break minutes'},Object.keys(PRE).map(k=>h('option',{value:k,selected:k===pre?'':null},k)));s.addEventListener('change',()=>{pre=s.value});return s})()];
  const o=[];
  if(r.pomo){if(r.ph==='ready')o.push(h('button',{class:'p',on:{click:nextRound}},'▶ Next round'));else if(r.ph==='break')o.push(h('button',{on:{click:nextRound}},'Skip break'))}
  else o.push(r.seg?h('button',{on:{click:pause}},'⏸ Break'):h('button',{class:'p',on:{click:resume}},'▶ Resume'));
  o.push(h('button',{on:{click:stop}},'■ Stop & log'));return o}
-function tick(){if(!me||!G)return;const now=Date.now();document.querySelectorAll('[data-uid]').forEach(e=>{e.textContent=runLabel(e.dataset.uid)});
- const r=mine().running;if(r&&r.pomo){const q=adv(r,now);if(q.ph!==r.ph){setRun(q);toast(q.ph==='break'?'☕ Focus round done — take a break':'🍅 Break over — ready for the next round');try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}}}}
+function tick(){if(!me||!G)return;const now=Date.now();
+ document.querySelectorAll('[data-cid]').forEach(el=>{const cid=el.dataset.cid;const co=(mine().courses||[]).find(c=>c.id===cid);el.textContent=co&&co.running?runLabelFor(co.running):''});
+ // Pomo phase transitions
+ (mine().courses||[]).forEach(co=>{if(!co.running||!co.running.pomo)return;const r=co.running,q=adv(r,now);if(q.ph!==r.ph){saveC(co.id,{running:q});toast(q.ph==='break'?'☕ Focus round done — take a break':'🍅 Break over — ready for the next round');try{navigator.vibrate&&navigator.vibrate(200)}catch(e){}}});}
 setInterval(tick,1000);
 function pgForm(){const t=h('input',{maxlength:120,placeholder:'e.g. Finish the SQL course by Thursday'});t.value=(mine().pg||{}).text||'';modal('My goal',h('div',{class:'sub'},'Your teammates see this on your card and can cheer you on.'),t,h('div',{class:'row'},h('button',{class:'p',on:{click:()=>{save({pg:{text:t.value.trim().slice(0,120)}});closeM()}}},'Save'),h('button',{on:{click:closeM}},'Cancel')));t.focus()}
-function courseForm(){
- const c=mine().course||{};
+function addNewCourse(){const cid='c_'+me.id+'_'+Date.now();courseFormFor(cid)}
+function courseFormFor(cid){
+ const courses=mine().courses||[];
+ const co=courses.find(c=>c.id===cid)||{id:cid,totalMins:0};
+ const c=co.course||{};
  const t=h('input',{placeholder:'Course title'}),d=h('input',{placeholder:'Domain (e.g. Data, Law, Design)'});
- if(c.title) t.value=c.title;
- if(c.domain) d.value=c.domain;
- const delBtn = c.title ? h('button',{style:'color:var(--err, red)',on:{click:()=>{if(confirm('Delete current course?')){save({course:null,cheat:null,running:null});closeM()}}}},'Delete') : null;
- modal('Your course',t,d,h('div',{class:'row'},
+ if(c.title)t.value=c.title;
+ if(c.domain)d.value=c.domain;
+ modal('Course',t,d,h('div',{class:'row'},
   h('button',{class:'p',on:{click:()=>{
    if(!t.value.trim())return;
    const isNew=!c.title;
-   save({course:{title:t.value.trim().slice(0,80),domain:d.value.trim().slice(0,40),status:c.status||'active'},...(isNew?{cheat:null}:{})});
+   saveC(cid,{course:{title:t.value.trim().slice(0,80),domain:d.value.trim().slice(0,40),status:c.status||'active'},...(isNew?{cheat:null}:{})});
    closeM()
   }}},'Save'),
-  delBtn,
   h('button',{on:{click:closeM}},'Cancel')));
  t.focus()
 }
-function complete(){const m=mine();if(!m.cheat)return;save({course:{...m.course,status:'complete',completedAt:Date.now()}});toast('Course complete 🎉')}
+function completeFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);if(!co||!co.cheat)return;saveC(cid,{course:{...co.course,status:'complete',completedAt:Date.now()}});toast('Course complete 🎉')}
 function settings(){const lead=G.leaderId===me.id;
  const mem=lead?[h('strong',{},'Members'),...G.members.filter(u=>u!==me.id).map(u=>h('div',{class:'row',style:'justify-content:space-between'},h('span',{},nm(u)),h('span',{class:'row'},h('button',{on:{click:()=>lead2('promote',u,'Make '+nm(u)+' the leader? You will become a regular member.')}},'Make leader'),h('button',{on:{click:()=>reset(u)}},'Reset password'),h('button',{on:{click:()=>lead2('remove',u,'Remove '+nm(u)+' from the group?')}},'Remove'))))]:[];
  modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,h('button',{class:'p',on:{click:closeM}},'Close'))}
@@ -149,14 +191,16 @@ function fileData(file){return new Promise((res,rej)=>{if(file.type==='applicati
  if(!file.type.startsWith('image/'))return rej(new Error('Choose a photo or a PDF'));const img=new Image(),u=URL.createObjectURL(file);
  img.onload=()=>{const sc=Math.min(1,1400/Math.max(img.width,img.height)),cv=document.createElement('canvas');cv.width=Math.round(img.width*sc);cv.height=Math.round(img.height*sc);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);URL.revokeObjectURL(u);let q=.8,d=cv.toDataURL('image/jpeg',q);while(d.length>1.3e6&&q>.3){q-=.15;d=cv.toDataURL('image/jpeg',q)}d.length>1.3e6?rej(new Error('Image is too large')):res(d)};
  img.onerror=()=>rej(new Error('Could not read the image'));img.src=u})}
-function cheatForm(){const k=h('select',{},h('option',{value:'note'},'Typed note'),h('option',{value:'link'},'Link'),h('option',{value:'file'},'Photo / PDF')),t=h('textarea',{rows:4,placeholder:'Your cheat sheet, or a link to it'}),f=h('input',{type:'file',accept:'image/*,application/pdf'});
- const sync=()=>{t.style.display=k.value==='file'?'none':'';f.style.display=k.value==='file'?'':'none'};k.addEventListener('change',sync);sync();const c0=mine().cheat;if(c0&&c0.kind!=='file')t.value=c0.text;
+function cheatFormFor(cid){
+ const co=(mine().courses||[]).find(c=>c.id===cid)||{};
+ const k=h('select',{},h('option',{value:'note'},'Typed note'),h('option',{value:'link'},'Link'),h('option',{value:'file'},'Photo / PDF')),t=h('textarea',{rows:4,placeholder:'Your cheat sheet, or a link to it'}),f=h('input',{type:'file',accept:'image/*,application/pdf'});
+ const sync=()=>{t.style.display=k.value==='file'?'none':'';f.style.display=k.value==='file'?'':'none'};k.addEventListener('change',sync);sync();if(co.cheat&&co.cheat.kind!=='file')t.value=co.cheat.text;
  modal('Cheat sheet',k,t,f,h('div',{class:'sub'},'Photos are shrunk automatically. PDFs up to 1 MB.'),h('div',{class:'row'},h('button',{class:'p',on:{click:async()=>{try{
-  if(k.value==='file'){const file=f.files[0];if(!file)return toast('Choose a file first');const data=await fileData(file);await api('save',{patch:{cheat:{kind:'file',text:file.name,data}}});M[me.id]={...mine(),cheat:{kind:'file',text:file.name}};render()}
-  else{const v=t.value.trim().slice(0,4000);if(!v)return;await save({cheat:{kind:k.value,text:v}})}
-  closeM();toast('Cheat sheet attached')}catch(e){toast(e.message)}}}},'Attach'),h('button',{on:{click:closeM}},'Cancel')))}
-async function viewCheat(uid){const c=(M[uid]||{}).cheat;if(!c)return;
- if(c.kind==='file'){modal('Cheat sheet · '+nm(uid),h('div',{class:'sub'},'Loading…'));try{const r=await api('cheatfile',{to:uid});modal('Cheat sheet · '+nm(uid),r.data&&r.data.startsWith('data:image')?h('img',{src:r.data,alt:c.text,style:'max-width:100%;border-radius:8px'}):h('a',{href:r.data||'#',download:c.text},'Download '+c.text),h('button',{on:{click:closeM}},'Close'))}catch(e){closeM();toast(e.message)}return}
+  if(k.value==='file'){const file=f.files[0];if(!file)return toast('Choose a file first');const data=await fileData(file);saveC(cid,{cheat:{kind:'file',text:file.name,data}});closeM();toast('Cheat sheet attached')}
+  else{const v=t.value.trim().slice(0,4000);if(!v)return;saveC(cid,{cheat:{kind:k.value,text:v}});closeM();toast('Cheat sheet attached')}}
+  catch(e){toast(e.message)}}}},'Attach'),h('button',{on:{click:closeM}},'Cancel')))}
+async function viewCheatFor(uid,courseObj){const c=courseObj.cheat;if(!c)return;
+ if(c.kind==='file'){modal('Cheat sheet · '+nm(uid),h('div',{class:'sub'},'Loading…'));try{const r=await api('cheatfile',{to:uid,cid:courseObj.id});modal('Cheat sheet · '+nm(uid),r.data&&r.data.startsWith('data:image')?h('img',{src:r.data,alt:c.text,style:'max-width:100%;border-radius:8px'}):h('a',{href:r.data||'#',download:c.text},'Download '+c.text),h('button',{on:{click:closeM}},'Close'))}catch(e){closeM();toast(e.message)}return}
  const ok=c.kind==='link'&&/^https?:\/\//.test(c.text);modal('Cheat sheet · '+nm(uid),ok?h('a',{href:c.text,target:'_blank',rel:'noopener noreferrer'},c.text):h('div',{style:'white-space:pre-wrap'},c.text),h('button',{on:{click:closeM}},'Close'))}
 async function cheer(uid){try{await api('cheer',{to:uid});toast('👏 Cheered '+nm(uid));refresh()}catch(e){toast(e.message)}}
 let PDFS=null;
@@ -178,26 +222,8 @@ function boardView(){if(!HIST)return h('p',{class:'sub'},'Loading leaderboard…
    h('div',{style:'height:6px;border-radius:99px;background:var(--ol);margin:8px 0'},h('div',{style:'height:100%;border-radius:99px;background:var(--pr);transition:width .6s;width:'+Math.round(r[key]/top*100)+'%'})),
    h('div',{class:'sub'},fmt(r.wm)+' this week'+(r.streak?' · 🔥 '+r.streak+'-week streak':'')+' · best week '+fmt(r.best)+' · '+r.done+' course'+(r.done===1?'':'s')+' completed')))),
   h('p',{class:'sub'},'Points: 1 per minute studied, +60 for each week the goal is met, +100 per completed course.'))}
-function add(m){const s=Date.now();M[me.id]={...mine(),sessions:[...mine().sessions,{s,m}]};render();api('log',{s,m}).catch(e=>toast(e.message));toast('+'+m+' min')}
-function manual(){const i=h('input',{type:'number',min:1,max:600,placeholder:'Minutes'});modal('Log time',i,h('div',{class:'row'},h('button',{class:'p',on:{click:()=>{const v=Math.round(+i.value);if(v>0&&v<=600){add(v);closeM()}}}},'Save'),h('button',{on:{click:closeM}},'Cancel')));i.focus()}
-function courseForm(){
- const c=mine().course||{};
- const t=h('input',{placeholder:'Course title'}),d=h('input',{placeholder:'Domain (e.g. Data, Law, Design)'});
- if(c.title) t.value=c.title;
- if(c.domain) d.value=c.domain;
- const delBtn = c.title ? h('button',{style:'color:var(--err, red)',on:{click:()=>{if(confirm('Delete current course?')){save({course:null,cheat:null,running:null});closeM()}}}},'Delete') : null;
- modal('Your course',t,d,h('div',{class:'row'},
-  h('button',{class:'p',on:{click:()=>{
-   if(!t.value.trim())return;
-   const isNew=!c.title;
-   save({course:{title:t.value.trim().slice(0,80),domain:d.value.trim().slice(0,40),status:c.status||'active'},...(isNew?{cheat:null}:{})});
-   closeM()
-  }}},'Save'),
-  delBtn,
-  h('button',{on:{click:closeM}},'Cancel')));
- t.focus()
-}
-function complete(){const m=mine();if(!m.cheat)return;save({course:{...m.course,status:'complete',completedAt:Date.now()}});toast('Course complete 🎉')}
+function addTo(m,cid){const s=Date.now();const cur=mine();const courses=(cur.courses||[]).map(c=>c.id===cid?{...c,sessions:[...(c.sessions||[]),{s,m}]}:c);M[me.id]={...cur,courses,sessions:[...cur.sessions,{s,m}]};render();api('log',{s,m}).catch(e=>toast(e.message));toast('+'+m+' min')}
+function manualFor(cid){const i=h('input',{type:'number',min:1,max:600,placeholder:'Minutes'});modal('Log time',i,h('div',{class:'row'},h('button',{class:'p',on:{click:()=>{const v=Math.round(+i.value);if(v>0&&v<=600){addTo(v,cid);closeM()}}}},'Save'),h('button',{on:{click:closeM}},'Cancel')));i.focus()}
 function settings(){const lead=G.leaderId===me.id;
  const mem=lead?[h('strong',{},'Members'),...G.members.filter(u=>u!==me.id).map(u=>h('div',{class:'row',style:'justify-content:space-between'},h('span',{},nm(u)),h('span',{class:'row'},h('button',{on:{click:()=>lead2('promote',u,'Make '+nm(u)+' the leader? You will become a regular member.')}},'Make leader'),h('button',{on:{click:()=>reset(u)}},'Reset password'),h('button',{on:{click:()=>lead2('remove',u,'Remove '+nm(u)+' from the group?')}},'Remove'))))]:[];
  modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,h('button',{class:'p',on:{click:closeM}},'Close'))}
@@ -286,7 +312,12 @@ async function logout(){try{await api('logout')}catch(e){}G=null;M={};N=[];auth(
 async function refresh(){try{const d0=new Date(wk());d0.setDate(d0.getDate()-7);const s=await api('state',{w0:d0.getTime(),w1:wk()});me=s.me;if(offline){offline=false;toast('Back online')}
  if(!s.group){G=null;lastSig='';if(view!=='gate'){view='gate';gate()}return}
  const sig=JSON.stringify([s.group,s.members,s.nudges,s.last]);if(view==='app'&&G&&sig===lastSig)return;lastSig=sig;
- view='app';G={...s.group,members:s.members.map(m=>m.uid)};M={};names={};LAST=s.last||{};s.members.forEach(m=>{M[m.uid]=m;names[m.uid]=m.name});
+ view='app';G={...s.group,members:s.members.map(m=>m.uid)};M={};names={};LAST=s.last||{};s.members.forEach(m=>{
+  // Migrate old single-course to courses array
+  if(m.courses&&m.courses.length){}else if(m.course){m.courses=[{id:'c_'+m.uid+'_0',course:m.course,running:m.running,cheat:m.cheat,totalMins:0}];}
+  if(!m.courses||!m.courses.length)m.courses=[{id:'c_'+m.uid+'_0',totalMins:0}];
+  M[m.uid]=m;names[m.uid]=m.name
+ });
  if(!first){
   let toNotify=[];
   (s.nudges||[]).forEach(n=>{if(!notified.has('n_'+n.id)){notified.add('n_'+n.id);toNotify.push('👋 '+nm(n.from)+' nudged you');}});

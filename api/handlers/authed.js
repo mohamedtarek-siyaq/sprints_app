@@ -7,9 +7,9 @@ const authed = {
     const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) return { me, group: null };
     const [g] = await sql`select id,name,leader_id,goal,days from groups where id=${m.gid}`;
     const since = Date.now() - 8 * 864e5;
-    const members = await sql`select m.user_id as uid, u.username as name, m.course, coalesce((select json_agg(json_build_object('s', x.s, 'm', x.m) order by x.s) from sessions x where x.user_id=m.user_id and x.s > ${since}), '[]'::json) as sessions, m.pgoal as pg, m.running, m.cheat from members m join users u on u.id=m.user_id where m.gid=${m.gid} order by m.joined_at`;
+    const members = await sql`select m.user_id as uid, u.username as name, m.course, m.courses, coalesce((select json_agg(json_build_object('s', x.s, 'm', x.m) order by x.s) from sessions x where x.user_id=m.user_id and x.s > ${since}), '[]'::json) as sessions, m.pgoal as pg, m.running, m.cheat from members m join users u on u.id=m.user_id where m.gid=${m.gid} order by m.joined_at`;
     const cs = await sql`select to_id, count(*)::int as n from cheers where gid=${m.gid} and at > ${Date.now() - 7 * 864e5} group by to_id`;
-    members.forEach(x => { x.cheers = (cs.find(y => y.to_id === x.uid) || {}).n || 0; });
+    members.forEach(x => { x.cheers = (cs.find(y => y.to_id === x.uid) || {}).n || 0; if(x.courses) x.courses.forEach(c=>delete c.cheatData); });
     const nudges = await sql`select id, from_id as "from" from nudges where to_id=${uid} and gid=${m.gid} and not seen`;
     const newCheers = await sql`select id, from_id as "from" from cheers where to_id=${uid} and gid=${m.gid} and not seen`;
     const w0 = Number(b.w0), w1 = Number(b.w1), last = {};
@@ -30,27 +30,46 @@ const authed = {
   },
   async save(uid, b) {
     const p = b.patch || {}, k = {};
-    if ('course' in p) { const x = p.course; k.course = x ? { title: String(x.title || '').slice(0, 80), domain: String(x.domain || '').slice(0, 40), status: x.status === 'complete' ? 'complete' : 'active', ...(Number.isFinite(x.completedAt) ? { completedAt: x.completedAt } : {}) } : null; }
-    if ('running' in p) {
-      const x = p.running, n = v => (Number.isFinite(+v) ? +v : 0);
-      k.running = x && Number.isFinite(x.s) ? { s: x.s, acc: Math.max(0, n(x.acc)), seg: x.seg ? n(x.seg) : null, ...(x.pomo ? { pomo: { w: Math.min(180, Math.max(1, n(x.pomo.w))), b: Math.min(60, Math.max(1, n(x.pomo.b))) }, ph: ['work', 'break', 'ready'].includes(x.ph) ? x.ph : 'work', pt: n(x.pt) } : { pomo: null }) } : null;
-    }
     if ('pg' in p) { const t = String((p.pg && p.pg.text) || '').trim().slice(0, 120); k.pg = t ? { text: t } : null; }
-    if ('cheat' in p) {
-      const x = p.cheat || {}; k.cheatData = null;
-      if (x.kind === 'file' && /^data:(image\/[a-z+.-]+|application\/pdf);base64,/.test(String(x.data || '').slice(0, 60)) && x.data.length <= 1.4e6) { k.cheat = { kind: 'file', text: String(x.text || 'file').slice(0, 120), at: Date.now() }; k.cheatData = x.data; }
-      else k.cheat = x.kind !== 'file' && String(x.text || '').trim() ? { kind: x.kind === 'link' ? 'link' : 'note', text: String(x.text).slice(0, 4000), at: Date.now() } : null;
-    }
-    if (k.course && k.course.status === 'complete') {
-      const [cur] = await sql`select cheat, course from members where user_id=${uid}`;
-      const theCheat = 'cheat' in k ? k.cheat : (cur && cur.cheat);
-      if (!theCheat) throw bad('Attach a cheat sheet first');
-      if (!(cur && cur.course && cur.course.status === 'complete')) await sql`insert into done_courses(user_id,title,domain,at,cheat_name) values(${uid},${k.course.title},${k.course.domain},${Date.now()},${theCheat.text})`;
-    }
-    if ('course' in k) await sql`update members set course=${j(k.course)}::jsonb where user_id=${uid}`;
-    if ('running' in k) await sql`update members set running=${j(k.running)}::jsonb where user_id=${uid}`;
     if ('pg' in k) await sql`update members set pgoal=${j(k.pg)}::jsonb where user_id=${uid}`;
-    if ('cheat' in k) await sql`update members set cheat=${j(k.cheat)}::jsonb, cheat_data=${k.cheatData ?? null} where user_id=${uid}`;
+    
+    if (p.courseId && p.coursePatch) {
+      const [cur] = await sql`select courses from members where user_id=${uid}`;
+      let courses = cur.courses || [];
+      const idx = courses.findIndex(c => c.id === p.courseId);
+      let c = idx >= 0 ? courses[idx] : { id: p.courseId, totalMins: 0 };
+      
+      const cp = p.coursePatch;
+      if ('course' in cp) { 
+        c.course = cp.course ? { title: String(cp.course.title || '').slice(0, 80), domain: String(cp.course.domain || '').slice(0, 40), status: cp.course.status === 'complete' ? 'complete' : 'active', ...(Number.isFinite(cp.course.completedAt) ? { completedAt: cp.course.completedAt } : {}) } : null; 
+      }
+      if ('running' in cp) {
+        const x = cp.running, n = v => (Number.isFinite(+v) ? +v : 0);
+        c.running = x && Number.isFinite(x.s) ? { s: x.s, acc: Math.max(0, n(x.acc)), seg: x.seg ? n(x.seg) : null, ...(x.pomo ? { pomo: { w: Math.min(180, Math.max(1, n(x.pomo.w))), b: Math.min(60, Math.max(1, n(x.pomo.b))) }, ph: ['work', 'break', 'ready'].includes(x.ph) ? x.ph : 'work', pt: n(x.pt) } : { pomo: null }) } : null;
+      }
+      if ('cheat' in cp) {
+        const x = cp.cheat || {}; c.cheatData = null;
+        if (x.kind === 'file' && /^data:(image\/[a-z+.-]+|application\/pdf);base64,/.test(String(x.data || '').slice(0, 60)) && x.data.length <= 1.4e6) { c.cheat = { kind: 'file', text: String(x.text || 'file').slice(0, 120), at: Date.now() }; c.cheatData = x.data; }
+        else c.cheat = x.kind !== 'file' && String(x.text || '').trim() ? { kind: x.kind === 'link' ? 'link' : 'note', text: String(x.text).slice(0, 4000), at: Date.now() } : null;
+      }
+      
+      if (c.course && c.course.status === 'complete') {
+        const theCheat = c.cheat;
+        if (!theCheat) throw bad('Attach a cheat sheet first');
+        await sql`insert into done_courses(user_id,title,domain,at,cheat_name) values(${uid},${c.course.title},${c.course.domain},${Date.now()},${theCheat.text})`;
+      }
+      
+      if (idx >= 0) courses[idx] = c; else courses.push(c);
+      await sql`update members set courses=${j(courses)}::jsonb where user_id=${uid}`;
+    }
+    
+    if (p.deleteCourseId) {
+      const [cur] = await sql`select courses from members where user_id=${uid}`;
+      let courses = (cur.courses || []).filter(c => c.id !== p.deleteCourseId);
+      if (courses.length === 0) courses.push({ id: 'c_' + uid + '_' + Date.now(), totalMins: 0 }); // ensure at least one
+      await sql`update members set courses=${j(courses)}::jsonb where user_id=${uid}`;
+    }
+    
     return { ok: 1 };
   },
   async goal(uid, b) {
@@ -114,7 +133,13 @@ const authed = {
     await sql`update sessions set m=${m} where user_id=${uid} and s=${Math.round(+b.s)}`; return { ok: 1 };
   },
   async cheatfile(uid, b) {
-    const [r] = await sql`select t.cheat_data as data, t.cheat from members t join members a on a.gid=t.gid where a.user_id=${uid} and t.user_id=${String(b.to || '')}`;
+    const to = String(b.to || '');
+    const [r] = await sql`select t.cheat_data as data, t.cheat, t.courses from members t join members a on a.gid=t.gid where a.user_id=${uid} and t.user_id=${to}`;
+    if (!r) return { data: null, name: '' };
+    if (b.cid && r.courses) {
+      const co = (r.courses || []).find(c => c.id === b.cid);
+      if (co && co.cheatData) return { data: co.cheatData, name: (co.cheat && co.cheat.text) || '' };
+    }
     return { data: (r && r.data) || null, name: (r && r.cheat && r.cheat.text) || '' };
   },
   async cheer(uid, b) {
