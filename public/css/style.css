@@ -1,11 +1,13 @@
-﻿:root{--bg:#F7F4EF;--sf:#fff;--pr:#000;--on:#fff;--sec:#E8DCC4;--tx:#000;--ol:#D9D2C4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root{--bg:#F7F4EF;--sf:#fff;--pr:#000;--on:#fff;--sec:#E8DCC4;--tx:#000;--ol:#D9D2C4;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E0E0E;--sf:#1A1815;--pr:#F7F4EF;--on:#000;--tx:#F7F4EF;--ol:#3A362E}}
 :root[data-theme="dark"]{--bg:#0E0E0E;--sf:#1A1815;--pr:#F7F4EF;--on:#000;--tx:#F7F4EF;--ol:#3A362E}
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:400 15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .w{max-width:960px;margin:0 auto;padding:20px 16px 60px}
-header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:20px}
+header{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
+.header-top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+.header-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--ol);padding-top:10px}
 h1{font-size:22px;font-weight:600;margin:0}h2{font-size:15px;font-weight:600;margin:24px 0 10px}
 .sub{color:var(--tx);opacity:.65;font-size:13px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -18,7 +20,7 @@ input,select,textarea{background:var(--sf);border:1px solid var(--ol);border-rad
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 .card{background:var(--sf);border:1px solid var(--ol);border-radius:12px;padding:16px;animation:in .3s ease}
 @keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.top{display:flex;gap:14px;align-items:center}
+.top{display:flex;gap:14px;align-items:flex-start}
 .name{font-weight:600}
 .tag{display:inline-block;font-size:12px;border:1px solid var(--ol);border-radius:99px;padding:1px 9px;margin-top:4px}
 .live{background:var(--sec);color:#000;border-color:var(--sec)}
@@ -35,6 +37,7 @@ input,select,textarea{background:var(--sf);border:1px solid var(--ol);border-rad
 label{font-size:13px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ── PDF list ── */
 .pdf-list{display:grid;gap:10px;margin-top:8px}
 .pdf-item{display:flex;align-items:center;gap:12px;background:var(--sf);border:1px solid var(--ol);border-radius:12px;padding:14px 16px;animation:in .3s ease;transition:box-shadow .15s}
 .pdf-item:hover{box-shadow:0 2px 12px rgba(0,0,0,.08)}
@@ -45,3 +48,24 @@ label{font-size:13px}
 .pdf-meta{margin-top:3px}
 .pdf-del{margin-left:auto;flex-shrink:0;padding:4px 10px;font-size:13px;opacity:.5;transition:opacity .15s}
 .pdf-del:hover{opacity:1;color:var(--tx)}
+
+/* ── NProgress top bar ── */
+#nprogress{pointer-events:none;position:fixed;top:0;left:0;right:0;z-index:100}
+#nprogress-bar{height:3px;background:var(--pr);width:0%;transition:width .25s ease,opacity .4s ease;opacity:0;border-radius:0 2px 2px 0}
+#nprogress-bar.active{opacity:1}
+
+/* ── Full-page loading screen ── */
+#loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh}
+.loader-ring{width:44px;height:44px;border:3px solid var(--ol);border-top-color:var(--pr);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Card action row fix ── */
+.card-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.card-footer{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid var(--ol);margin-top:12px;padding-top:10px}
+.card-footer .row{gap:6px}
+
+/* ── Multi-course wrapper ── */
+.member-block{display:contents}
+.member-courses{display:grid;gap:8px}
+.add-course-btn{width:100%;margin-top:4px;border-style:dashed;opacity:.75}
+.add-course-btn:hover{opacity:1}

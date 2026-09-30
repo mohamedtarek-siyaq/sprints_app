@@ -18,13 +18,15 @@ function stats(m){const w=wk(),ss=((m&&m.sessions)||[]).filter(s=>s.s>=w);const 
  const exp=G.goal*before/Math.max(ds.length,1);
  const st=mins>=G.goal?'done':mins<exp?'behind':'ok';return{mins,days,st}}
 function nm(uid){const ids=G.members,n=names[uid]||'Someone';const same=ids.filter(i=>(names[i]||'Someone')===n);return same.length>1?n+' ('+(same.indexOf(uid)+1)+')':n}
+// ── NProgress ──
+const NP=(()=>{let w=0,t;const bar=$('#nprogress-bar');const set=v=>{w=v;bar.style.width=v+'%';bar.classList.add('active')};const done=()=>{set(100);clearTimeout(t);t=setTimeout(()=>{bar.classList.remove('active');bar.style.width='0%'},400)};return{start:()=>set(15),inc:()=>set(Math.min(w+15,90)),done}})();
 async function api(a,d){
- const app = $('#app'), bg = a !== 'state';
- if (bg && app) { app.style.pointerEvents = 'none'; app.style.opacity = '0.7'; }
- try {
+ const app=$('#app'),bg=a!=='state';
+ if(bg){NP.start()}
+ try{
   const r=await fetch('/api/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({a,...d})});const j=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(j.error||'Something went wrong');e.status=r.status;throw e}return j
- } finally {
-  if (bg && app) { app.style.pointerEvents = ''; app.style.opacity = '1'; }
+ }finally{
+  if(bg)NP.done();
  }
 }
 const mine=()=>M[me.id]||{sessions:[],courses:[],running:null,cheat:null};
@@ -42,7 +44,6 @@ function courseCard(uid, courseObj){
  const own=uid===me.id;
  const c=courseObj.course||null;
  const cid=courseObj.id;
- const isRunningHere=courseObj.running!=null;
  const label={done:'✓ Done',ok:'○ On track',behind:'! Behind'}[s.st];
  const acts=[];
  if(own){
@@ -55,56 +56,63 @@ function courseCard(uid, courseObj){
    acts.push(h('button',{on:{click:()=>cheatFormFor(cid)}},courseObj.cheat?'Cheat sheet ✓':'Add cheat sheet'));
    acts.push(h('button',{disabled:courseObj.cheat?null:'',title:courseObj.cheat?'':'Attach a cheat sheet first',on:{click:()=>completeFor(cid)}},'Mark complete'));
   }
-  acts.push(h('button',{style:'color:var(--err,red)',on:{click:()=>deleteCourse(cid)}},'✕ Delete'));
+  acts.push(h('button',{style:'color:var(--err,#d33)',on:{click:()=>deleteCourse(cid)}},'✕ Delete'));
  }else{
   if(s.st==='behind')acts.push(h('button',{on:{click:()=>nudge(uid)}},'👋 Nudge'));
   if(courseObj.cheat)acts.push(h('button',{on:{click:()=>viewCheatFor(uid,courseObj)}},'View cheat sheet'));
  }
  return h('div',{class:'card'},
-  h('div',{class:'top'},ring(s.mins/G.goal,uid),h('div',{},
+  h('div',{class:'top'},ring(s.mins/G.goal,uid),h('div',{style:'flex:1;min-width:0'},
    h('div',{class:'name'},nm(uid)+(own?' (you)':'')),
    h('div',{class:'sub'},c?c.title+(c.domain?' · '+c.domain:'')+(c.status==='complete'?' ✓ completed':''):'No course set'),
    h('div',{class:'sub'},fmt(s.mins)+' / '+fmt(G.goal)+' this week'),
    m.pg&&m.pg.text?h('div',{class:'sub'},'🎯 '+m.pg.text):null,
-   h('span',{class:'tag'},label),' ',m.cheers?h('span',{class:'tag'},'👏 '+m.cheers):null,
-   ' ',courseObj.running?h('span',{class:'tag live','data-cid':cid},runLabelFor(courseObj.running)):null)),
+   h('div',{style:'margin-top:4px'},h('span',{class:'tag'},label),m.cheers?h('span',{class:'tag',style:'margin-left:4px'},'👏 '+m.cheers):null,
+   courseObj.running?h('span',{class:'tag live',style:'margin-left:4px','data-cid':cid},runLabelFor(courseObj.running)):null))),
   h('div',{class:'dots'},G.days.slice().sort((a,b)=>((a-WS+7)%7)-((b-WS+7)%7)).map(d=>h('div',{class:'dot'+(s.days.has(d)?' on':'')},DN[d]))),
-  h('div',{class:'row'},acts))}
+  h('div',{class:'card-actions'},acts))}
 
 function card(uid){
  const m=M[uid]||{sessions:[],courses:[],running:null};
  const own=uid===me.id;
  const courses=m.courses&&m.courses.length?m.courses:[{id:'c_'+uid+'_0',totalMins:0}];
  const cards=courses.map(co=>courseCard(uid,co));
- // Add-course button for self
  if(own){
-  const addBtn=h('button',{class:'p',style:'width:100%;margin-top:8px',on:{click:addNewCourse}},'+ Add another course');
   return h('div',{},
-   h('div',{class:'row',style:'justify-content:space-between;align-items:center;margin-bottom:4px'},
-    h('div',{class:'row'},h('button',{on:{click:pgForm}},'🎯 My goal'),h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')),null),
-   ...cards,addBtn);
+   ...cards,
+   h('div',{class:'card-footer'},
+    h('div',{class:'row'},h('button',{on:{click:pgForm}},'🎯 My goal')),
+    h('button',{class:'add-course-btn',on:{click:addNewCourse}},'+ Add another course')));
  }
  return h('div',{},...cards,
-  h('div',{class:'row',style:'justify-content:flex-end'},h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')))
+  h('div',{class:'card-footer'},
+   h('div',{}),
+   h('button',{on:{click:()=>cheer(uid)}},'👏 Cheer')));
 }
 
 function render(){
  const a=$('#app');if(!G){return}
  if(document.activeElement&&document.activeElement.tagName==='SELECT'&&a.contains(document.activeElement))return;
- const lead=G.leaderId===me.id,live=Object.values(M).flat().length;
- const feed=[];for(const uid of G.members)for(const s of ((M[uid]||{}).sessions||[]))if(Date.now()-s.s<6048e5)feed.push({uid,...s,c:(M[uid].course||{}).title});
+ const lead=G.leaderId===me.id;
+ const feed=[];for(const uid of G.members)for(const s of ((M[uid]||{}).sessions||[]))if(Date.now()-s.s<6048e5){const co=(M[uid].courses||[]).find(c=>(c.sessions||[]).some(x=>x.s===s.s));feed.push({uid,...s,c:co&&co.course?co.course.title:null});}
  feed.sort((x,y)=>y.s-x.s);
+ // phone contact button
+ const phoneBtn=G.phone?h('a',{href:'https://wa.me/'+G.phone.replace(/\D/g,''),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact')):null;
  put(a,
-  h('header',{},h('div',{},h('h1',{},G.name),h('div',{class:'sub'},'Invite code: '+G.code+' · goal '+fmt(G.goal)+'/week')),
-   h('div',{class:'row'},
-    h('button',{on:{click:bell}},'🔔 '+(N.length+C.length)),
-    nav(),lead?h('button',{on:{click:goalForm}},'Edit goal'):null,
-    h('button',{on:{click:()=>{try{navigator.clipboard.writeText(G.code);toast('Code copied')}catch(e){toast(G.code)}}}},'Copy code'),
-    h('button',{on:{click:theme}},'◐ Theme'),h('button',{'aria-label':'Settings',on:{click:settings}},'⚙'),h('button',{on:{click:logout}},'Log out'))),
+  h('header',{},
+   h('div',{class:'header-top'},
+    h('div',{},h('h1',{},G.name),h('div',{class:'sub'},'Code: '+G.code+' · Goal '+fmt(G.goal)+'/week'+(G.monthGoal?' · '+Math.round(G.monthGoal/60)+'h/month':''))),
+    h('div',{class:'row'},
+     h('button',{on:{click:bell}},'🔔 '+(N.length+C.length)),
+     lead?h('button',{on:{click:goalForm}},'Edit goal'):null,
+     h('button',{on:{click:()=>{try{navigator.clipboard.writeText(G.code);toast('Code copied')}catch(e){toast(G.code)}}}},'Copy code'),
+     phoneBtn,
+     h('button',{on:{click:theme}},'◐ Theme'),h('button',{'aria-label':'Settings',on:{click:settings}},'⚙'),h('button',{on:{click:logout}},'Log out'))),
+   h('div',{class:'header-nav'},nav())),
   tab==='now'&&recap(),
   tab==='hist'?histView():tab==='board'?boardView():tab==='pdfs'?pdfsView():h('div',{class:'grid'},G.members.map(card)),
   tab==='now'&&h('h2',{},'Recent activity'),
-  tab==='now'&&h('div',{class:'feed'},(()=>{const items=[...feed.slice(0,8).map(f=>h('div',{},nm(f.uid)+' logged '+fmt(f.m)+(f.c?' \u00b7 '+f.c:'')+' \u2014 '+new Date(f.s).toLocaleDateString(undefined,{weekday:'short'})))];if(PDFS&&PDFS.pdfs)PDFS.pdfs.filter(p=>Date.now()-+p.at<6048e5).slice(0,3).forEach(p=>items.unshift(h('div',{},'📄 '+p.added_by+' added: ',h('a',{href:p.url,target:'_blank',rel:'noopener noreferrer'},p.title),' \u2014 '+new Date(+p.at).toLocaleDateString(undefined,{weekday:'short'}))));return items.length?items:h('div',{class:'sub'},'Nothing logged yet this week. Be the first.')})()))
+  tab==='now'&&h('div',{class:'feed'},(()=>{const items=[...feed.slice(0,8).map(f=>h('div',{},nm(f.uid)+' logged '+fmt(f.m)+(f.c?' · '+f.c:'')+' — '+new Date(f.s).toLocaleDateString(undefined,{weekday:'short'})))];if(PDFS&&PDFS.pdfs)PDFS.pdfs.filter(p=>Date.now()-+p.at<6048e5).slice(0,3).forEach(p=>items.unshift(h('div',{},'📄 '+p.added_by+' added: ',h('a',{href:p.url,target:'_blank',rel:'noopener noreferrer'},p.title),' — '+new Date(+p.at).toLocaleDateString(undefined,{weekday:'short'}))));return items.length?items:h('div',{class:'sub'},'Nothing logged yet this week. Be the first.')})()))
  tick()}
 
 const PRE={'25/5':[25,5],'50/10':[50,10],'90/15':[90,15]};let pre='25/5',lb='week';
@@ -297,12 +305,25 @@ function pdfsView(){
    h('div',{},'Be the first — click '),h('button',{class:'p',style:'display:inline',on:{click:addForm}},'+ Add link')))}
 
 function gate(){
- const n=h('input',{placeholder:'Group name'}),c=h('input',{placeholder:'Invite code'});
+ const n=h('input',{placeholder:'Group name'});
+ const goalH=h('input',{type:'number',min:1,max:100,placeholder:'Weekly goal (hours, e.g. 15)',value:'15'});
+ const phone=h('input',{type:'tel',placeholder:'WhatsApp number (e.g. 201012345678)'});
+ const c=h('input',{placeholder:'Invite code'});
  const go=(a,d)=>async()=>{try{await api(a,d());view='';refresh()}catch(e){toast(e.message)}};
- $('#app').replaceChildren(h('header',{},h('h1',{},'Cohort'),h('button',{on:{click:logout}},'Log out')),h('p',{class:'sub'},'Study together. Small weekly goal, everyone can see progress.'),
+ $('#app').replaceChildren(
+  h('header',{class:'header-top'},h('h1',{},'Cohort'),h('button',{on:{click:logout}},'Log out')),
+  h('p',{class:'sub'},'Study together. Small weekly goal, everyone can see progress.'),
   h('div',{class:'grid'},
-   h('div',{class:'card',style:'display:grid;gap:10px'},h('strong',{},'Create a group'),n,h('button',{class:'p',on:{click:go('create',()=>({name:n.value}))}},'Create')),
-   h('div',{class:'card',style:'display:grid;gap:10px'},h('strong',{},'Join with a code'),c,h('button',{class:'p',on:{click:go('join',()=>({code:c.value}))}},'Join'))))}
+   h('div',{class:'card',style:'display:grid;gap:10px'},
+    h('strong',{},'Create a group'),
+    n,
+    h('label',{},'Weekly goal (hours)'),goalH,
+    h('label',{},'WhatsApp contact number (optional)'),phone,
+    h('button',{class:'p',on:{click:go('create',()=>({name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()}))}},'Create')),
+   h('div',{class:'card',style:'display:grid;gap:10px'},
+    h('strong',{},'Join with a code'),
+    c,
+    h('button',{class:'p',on:{click:go('join',()=>({code:c.value}))}},'Join'))))}
 function auth(){clearInterval(poll);me=null;view='auth';
  const u=h('input',{placeholder:'Username',autocomplete:'username'}),p=h('input',{type:'password',placeholder:'Password (6+ characters)',autocomplete:'current-password'});
  const go=a=>async()=>{try{await api(a,{username:u.value,password:p.value});begin()}catch(e){toast(e.message)}};
@@ -312,7 +333,7 @@ async function logout(){try{await api('logout')}catch(e){}G=null;M={};N=[];auth(
 async function refresh(){try{const d0=new Date(wk());d0.setDate(d0.getDate()-7);const s=await api('state',{w0:d0.getTime(),w1:wk()});me=s.me;if(offline){offline=false;toast('Back online')}
  if(!s.group){G=null;lastSig='';if(view!=='gate'){view='gate';gate()}return}
  const sig=JSON.stringify([s.group,s.members,s.nudges,s.last]);if(view==='app'&&G&&sig===lastSig)return;lastSig=sig;
- view='app';G={...s.group,members:s.members.map(m=>m.uid)};M={};names={};LAST=s.last||{};s.members.forEach(m=>{
+ view='app';G={...s.group,members:s.members.map(m=>m.uid),phone:s.group.phone};M={};names={};LAST=s.last||{};s.members.forEach(m=>{
   // Migrate old single-course to courses array
   if(m.courses&&m.courses.length){}else if(m.course){m.courses=[{id:'c_'+m.uid+'_0',course:m.course,running:m.running,cheat:m.cheat,totalMins:0}];}
   if(!m.courses||!m.courses.length)m.courses=[{id:'c_'+m.uid+'_0',totalMins:0}];
@@ -329,6 +350,10 @@ async function refresh(){try{const d0=new Date(wk());d0.setDate(d0.getDate()-7);
  }
  first=false;N=s.nudges||[];C=s.newCheers||[];render()}
  catch(e){if(e.status===401)auth();else if(!offline){offline=true;toast('Connection problem — retrying…')}}}
-function begin(){clearInterval(poll);lastSig='';view='';refresh();poll=setInterval(()=>{if(!document.hidden&&me)refresh()},8000)}
+function begin(){
+ // hide the static loading screen once JS runs
+ const ls=$('#loading-screen');if(ls)ls.style.display='none';
+ clearInterval(poll);lastSig='';view='';NP.start();refresh();
+ poll=setInterval(()=>{if(!document.hidden&&me)refresh()},8000)}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&me)refresh()});
 begin();

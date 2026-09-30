@@ -5,7 +5,7 @@ const authed = {
     const [u] = await sql`select username from users where id=${uid}`; if (!u) throw bad('Please log in', 401);
     const me = { id: uid, name: u.username };
     const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) return { me, group: null };
-    const [g] = await sql`select id,name,leader_id,goal,days from groups where id=${m.gid}`;
+    const [g] = await sql`select id,name,leader_id,goal,days,phone from groups where id=${m.gid}`;
     const since = Date.now() - 8 * 864e5;
     const members = await sql`select m.user_id as uid, u.username as name, m.course, m.courses, coalesce((select json_agg(json_build_object('s', x.s, 'm', x.m) order by x.s) from sessions x where x.user_id=m.user_id and x.s > ${since}), '[]'::json) as sessions, m.pgoal as pg, m.running, m.cheat from members m join users u on u.id=m.user_id where m.gid=${m.gid} order by m.joined_at`;
     const cs = await sql`select to_id, count(*)::int as n from cheers where gid=${m.gid} and at > ${Date.now() - 7 * 864e5} group by to_id`;
@@ -14,13 +14,15 @@ const authed = {
     const newCheers = await sql`select id, from_id as "from" from cheers where to_id=${uid} and gid=${m.gid} and not seen`;
     const w0 = Number(b.w0), w1 = Number(b.w1), last = {};
     if (w0 > 0 && w1 > w0 && w1 - w0 <= 8 * 864e5) (await sql`select x.user_id as uid, sum(x.m)::int as m from sessions x join members mm on mm.user_id=x.user_id where mm.gid=${m.gid} and x.s >= ${w0} and x.s < ${w1} group by x.user_id`).forEach(y => { last[y.uid] = y.m; });
-    return { me, group: { id: g.id, code: g.id, name: g.name, leaderId: g.leader_id, goal: g.goal, days: g.days }, members, nudges, newCheers, last };
+    return { me, group: { id: g.id, code: g.id, name: g.name, leaderId: g.leader_id, goal: g.goal, days: g.days, phone: g.phone || null }, members, nudges, newCheers, last };
   },
   async create(uid, b) {
     const name = String(b.name || '').trim().slice(0, 50); if (!name) throw bad('Name your group');
     if ((await sql`select 1 from members where user_id=${uid}`).length) throw bad('You are already in a group');
     const code = c.randomBytes(4).toString('hex').slice(0, 6);
-    await sql`insert into groups(id,name,leader_id,days) values(${code},${name},${uid},'[0,1,2,3,4]'::jsonb)`;
+    const goalMins = Math.min(6000, Math.max(30, Math.round((+b.goalHours || 15) * 60)));
+    const phone = String(b.phone || '').replace(/[^\d+]/g, '').slice(0, 20);
+    await sql`insert into groups(id,name,leader_id,goal,days,phone) values(${code},${name},${uid},${goalMins},'[0,1,2,3,4]'::jsonb,${phone||null})`;
     await sql`insert into members(user_id,gid) values(${uid},${code})`; return { ok: 1 };
   },
   async join(uid, b) {
