@@ -7,13 +7,13 @@ const authed = {
     const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) return { me, group: null };
     const [g] = await sql`select id,name,leader_id,goal,days,phone from groups where id=${m.gid}`;
     const since = Date.now() - 8 * 864e5;
-    const members = await sql`select m.user_id as uid, u.username as name, m.course, m.courses, coalesce((select json_agg(json_build_object('s', x.s, 'm', x.m) order by x.s) from sessions x where x.user_id=m.user_id and x.s > ${since}), '[]'::json) as sessions, m.pgoal as pg, m.running, m.cheat from members m join users u on u.id=m.user_id where m.gid=${m.gid} order by m.joined_at`;
+    const members = await sql`select m.user_id as uid, u.username as name, m.course, m.courses, coalesce((select json_agg(json_build_object('s', x.s, 'm', x.m) order by x.s) from sessions x where x.user_id=m.user_id and x.s > ${since} and (x.gid=${m.gid} or x.gid is null)), '[]'::json) as sessions, m.pgoal as pg, m.running, m.cheat from members m join users u on u.id=m.user_id where m.gid=${m.gid} order by m.joined_at`;
     const cs = await sql`select to_id, count(*)::int as n from cheers where gid=${m.gid} and at > ${Date.now() - 7 * 864e5} group by to_id`;
     members.forEach(x => { x.cheers = (cs.find(y => y.to_id === x.uid) || {}).n || 0; if(x.courses) x.courses.forEach(c=>delete c.cheatData); });
     const nudges = await sql`select id, from_id as "from" from nudges where to_id=${uid} and gid=${m.gid} and not seen`;
     const newCheers = await sql`select id, from_id as "from" from cheers where to_id=${uid} and gid=${m.gid} and not seen`;
     const w0 = Number(b.w0), w1 = Number(b.w1), last = {};
-    if (w0 > 0 && w1 > w0 && w1 - w0 <= 8 * 864e5) (await sql`select x.user_id as uid, sum(x.m)::int as m from sessions x join members mm on mm.user_id=x.user_id where mm.gid=${m.gid} and x.s >= ${w0} and x.s < ${w1} group by x.user_id`).forEach(y => { last[y.uid] = y.m; });
+    if (w0 > 0 && w1 > w0 && w1 - w0 <= 8 * 864e5) (await sql`select x.user_id as uid, sum(x.m)::int as m from sessions x where (x.gid=${m.gid} or x.gid is null) and x.s >= ${w0} and x.s < ${w1} group by x.user_id`).forEach(y => { last[y.uid] = y.m; });
     return { me, group: { id: g.id, code: g.id, name: g.name, leaderId: g.leader_id, goal: g.goal, days: g.days, phone: g.phone || null }, members, nudges, newCheers, last };
   },
   async create(uid, b) {
@@ -86,7 +86,8 @@ const authed = {
       if (c.course && c.course.status === 'complete') {
         const theCheat = c.cheat;
         if (!theCheat) throw bad('Attach a cheat sheet first');
-        await sql`insert into done_courses(user_id,title,domain,at,cheat_name) values(${uid},${c.course.title},${c.course.domain},${Date.now()},${theCheat.text})`;
+        const [mm] = await sql`select gid from members where user_id=${uid}`;
+        await sql`insert into done_courses(user_id,title,domain,at,cheat_name,gid) values(${uid},${c.course.title},${c.course.domain},${Date.now()},${theCheat.text},${mm?mm.gid:null})`;
       }
       
       if (idx >= 0) courses[idx] = c; else courses.push(c);
@@ -119,14 +120,15 @@ const authed = {
   async log(uid, b) {
     const s = Math.round(+b.s), m = Math.round(+b.m);
     if (!(s > 0) || !(m > 0 && m <= 600)) throw bad('Invalid session');
-    await sql`insert into sessions(user_id,s,m) values(${uid},${s},${m}) on conflict do nothing`;
+    const [mm] = await sql`select gid from members where user_id=${uid}`;
+    await sql`insert into sessions(user_id,s,m,gid) values(${uid},${s},${m},${mm?mm.gid:null}) on conflict do nothing`;
     if (b.stop) await sql`update members set running=null where user_id=${uid}`;
     return { ok: 1 };
   },
   async history(uid) {
     const [g] = await sql`select gid from members where user_id=${uid}`; if (!g) return { sessions: [], done: [] };
-    const sessions = await sql`select x.user_id as uid, x.s, x.m from sessions x join members m on m.user_id=x.user_id where m.gid=${g.gid} order by x.s limit 50000`;
-    const done = await sql`select d.user_id as uid, d.title, d.domain, d.at, d.cheat_name from done_courses d join members m on m.user_id=d.user_id where m.gid=${g.gid} order by d.at desc limit 500`;
+    const sessions = await sql`select x.user_id as uid, x.s, x.m from sessions x where (x.gid=${g.gid} or x.gid is null) and exists (select 1 from members m where m.user_id=x.user_id and m.gid=${g.gid}) order by x.s limit 50000`;
+    const done = await sql`select d.user_id as uid, d.title, d.domain, d.at, d.cheat_name from done_courses d where (d.gid=${g.gid} or d.gid is null) and exists (select 1 from members m where m.user_id=d.user_id and m.gid=${g.gid}) order by d.at desc limit 500`;
     return { sessions, done };
   },
   async passwd(uid, b) {
@@ -209,8 +211,8 @@ const authed = {
     const [g] = await sql`select leader_id from groups where id=${gid}`; if (!g) throw bad('No group with that id', 404);
     const admin = await isAdmin(uid);
     if (g.leader_id !== uid && !admin) throw bad('Only the group leader or an admin can delete this group', 403);
-    await sql`delete from sessions where user_id in (select user_id from members where gid=${gid})`;
-    await sql`delete from done_courses where user_id in (select user_id from members where gid=${gid})`;
+    await sql`delete from sessions where gid=${gid}`;
+    await sql`delete from done_courses where gid=${gid}`;
     await sql`delete from members where gid=${gid}`;
     await sql`delete from nudges where gid=${gid}`;
     await sql`delete from cheers where gid=${gid}`;

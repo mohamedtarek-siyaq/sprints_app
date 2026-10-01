@@ -24,6 +24,10 @@ const init = () => ready || (ready = (async () => {
   await sql`create table if not exists nudges(id text primary key, gid text not null, from_id text not null, to_id text not null, at bigint not null, seen boolean not null default false)`;
   await sql`create table if not exists pdf_links(id bigserial primary key, gid text not null, user_id text not null, title text not null, url text not null, at bigint not null)`;
   await sql`alter table users add column if not exists admin boolean not null default false`;
+  try { await sql`alter table sessions add column if not exists gid text`; } catch(e) {}
+  try { await sql`alter table done_courses add column if not exists gid text`; } catch(e) {}
+  try { await sql`update sessions s set gid=m.gid from members m where m.user_id=s.user_id and s.gid is null`; } catch(e) {}
+  try { await sql`update done_courses d set gid=m.gid from members m where m.user_id=d.user_id and d.gid is null`; } catch(e) {}
 })());
 
 const sign = s => c.createHmac('sha256', SECRET).update(s).digest('hex');
