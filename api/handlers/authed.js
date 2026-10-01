@@ -1,9 +1,9 @@
-const { sql, bad, j, c, hash, needLeader } = require('../db');
+const { sql, bad, j, c, hash, needLeader, isAdmin } = require('../db');
 
 const authed = {
   async state(uid, b = {}) {
-    const [u] = await sql`select username from users where id=${uid}`; if (!u) throw bad('Please log in', 401);
-    const me = { id: uid, name: u.username };
+    const [u] = await sql`select username, admin from users where id=${uid}`; if (!u) throw bad('Please log in', 401);
+    const me = { id: uid, name: u.username, admin: !!u.admin };
     const [m] = await sql`select gid from members where user_id=${uid}`; if (!m) return { me, group: null };
     const [g] = await sql`select id,name,leader_id,goal,days,phone from groups where id=${m.gid}`;
     const since = Date.now() - 8 * 864e5;
@@ -30,15 +30,16 @@ const authed = {
     await sql`insert into groups(id,name,leader_id,goal,days,phone) values(${code},${name},${uid},${goalMins},'[0,1,2,3,4]'::jsonb,${phone||null})`;
     await sql`insert into members(user_id,gid) values(${uid},${code})`; return { ok: 1, code };
   },
-  async groups() {
-    const gs = await sql`select id,name,goal,days,phone from groups order by name asc`;
+  async groups(uid) {
+    const admin = await isAdmin(uid);
+    const gs = await sql`select id,name,goal,days,phone,leader_id from groups order by name asc`;
     const res = [];
     for (const g of gs) {
       const [{ n }] = await sql`select count(*)::int as n from members where gid=${g.id}`;
       const [l] = await sql`select u.username as leader_name from groups gg join users u on u.id=gg.leader_id where gg.id=${g.id}`;
-      res.push({ id: g.id, name: g.name, goal: g.goal, days: g.days, phone: g.phone || null, membersCount: n, leaderName: l ? l.leader_name : null });
+      res.push({ id: g.id, name: g.name, goal: g.goal, days: g.days, phone: g.phone || null, membersCount: n, leaderName: l ? l.leader_name : null, leaderId: g.leader_id, isLeader: g.leader_id === uid, canDelete: admin || g.leader_id === uid });
     }
-    return res;
+    return { groups: res, admin };
   },
   async preview(uid, b) {
     const code = String(b.code || '').replace(/[^a-z0-9]/gi,'').toLowerCase(); if (!code) throw bad('Code required');
@@ -202,6 +203,28 @@ const authed = {
     const r = await sql`delete from pdf_links where id=${id} and gid=${m && m.gid} and (user_id=${uid} or ${(g && g.leader_id) === uid}::boolean) returning id`;
     if (!r.length) throw bad('Not found or no permission', 403);
     return { ok: 1 };
+  },
+  async deleteGroup(uid, b) {
+    const gid = String(b.gid || '').replace(/[^a-z0-9]/gi,'').toLowerCase(); if (!gid) throw bad('Group id required');
+    const [g] = await sql`select leader_id from groups where id=${gid}`; if (!g) throw bad('No group with that id', 404);
+    const admin = await isAdmin(uid);
+    if (g.leader_id !== uid && !admin) throw bad('Only the group leader or an admin can delete this group', 403);
+    await sql`delete from sessions where user_id in (select user_id from members where gid=${gid})`;
+    await sql`delete from done_courses where user_id in (select user_id from members where gid=${gid})`;
+    await sql`delete from members where gid=${gid}`;
+    await sql`delete from nudges where gid=${gid}`;
+    await sql`delete from cheers where gid=${gid}`;
+    await sql`delete from pdf_links where gid=${gid}`;
+    await sql`delete from groups where id=${gid}`;
+    return { ok: 1 };
+  },
+  async setAdmin(uid, b) {
+    if (!(await isAdmin(uid))) throw bad('Only admins can do this', 403);
+    const username = String(b.username || '').trim().toLowerCase(); if (!username) throw bad('Username required');
+    const make = b.make !== false;
+    const [u] = await sql`update users set admin=${make} where username=${username} returning id, username, admin`;
+    if (!u) throw bad('User not found', 404);
+    return { ok: 1, user: { id: u.id, username: u.username, admin: !!u.admin } };
   },
 };
 

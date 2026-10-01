@@ -177,9 +177,10 @@ function courseFormFor(cid){
  t.focus()
 }
 function completeFor(cid){const co=(mine().courses||[]).find(c=>c.id===cid);if(!co||!co.cheat)return;saveC(cid,{course:{...co.course,status:'complete',completedAt:Date.now()}});toast('Course complete 🎉')}
-function settings(){const lead=G.leaderId===me.id;
+function settings(){const lead=G.leaderId===me.id;const canDelGroup=lead||(me&&me.admin);
  const mem=lead?[h('strong',{},'Members'),...G.members.filter(u=>u!==me.id).map(u=>h('div',{class:'row',style:'justify-content:space-between'},h('span',{},nm(u)),h('span',{class:'row'},h('button',{on:{click:()=>lead2('promote',u,'Make '+nm(u)+' the leader? You will become a regular member.')}},'Make leader'),h('button',{on:{click:()=>reset(u)}},'Reset password'),h('button',{on:{click:()=>lead2('remove',u,'Remove '+nm(u)+' from the group?')}},'Remove'))))]:[];
- modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,h('button',{class:'p',on:{click:closeM}},'Close'))}
+ const delGrpBtn=canDelGroup?h('button',{title:'Delete this entire group forever',style:'color:var(--err,#d33);border-color:var(--err,#d33)',on:{click:async()=>{if(confirm('⚠️ Permanently DELETE this group and EVERYTHING in it?\n\nAll members, sessions, nudges, cheers, PDFs and data will be erased. This CANNOT be undone.')){try{await api('deleteGroup',{gid:G.id});closeM();tab='now';G=null;HIST=null;view='';refresh();toast('Group deleted')}catch(e){toast(e.message)}}}}},'🗑 Permanently delete this group'):null;
+ modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,delGrpBtn,h('button',{class:'p',on:{click:closeM}},'Close'))}
 async function lead2(a,u,msg){if(!confirm(msg))return;try{await api(a,{to:u});closeM();refresh();toast('Done')}catch(e){toast(e.message)}}
 async function reset(u){if(!confirm('Reset the password for '+nm(u)+'?'))return;try{const r=await api('resetpw',{to:u});modal('Temporary password',h('div',{},nm(u)+' can log in with:'),h('code',{style:'font-size:20px;user-select:all'},r.temp),h('div',{class:'sub'},'Share it privately. They should change it in Settings after logging in.'),h('button',{class:'p',on:{click:closeM}},'Done'))}catch(e){toast(e.message)}}
 async function leave(){if(!confirm('Leave this group? Your history is kept if you rejoin.'))return;try{await api('leave');closeM();tab='now';HIST=null;view='';refresh()}catch(e){toast(e.message)}}
@@ -233,9 +234,10 @@ function boardView(){if(!HIST)return h('p',{class:'sub'},'Loading leaderboard…
   h('p',{class:'sub'},'Points: 1 per minute studied, +60 for each week the goal is met, +100 per completed course.'))}
 function addTo(m,cid){const s=Date.now();const cur=mine();const courses=(cur.courses||[]).map(c=>c.id===cid?{...c,sessions:[...(c.sessions||[]),{s,m}]}:c);M[me.id]={...cur,courses,sessions:[...cur.sessions,{s,m}]};render();api('log',{s,m}).catch(e=>toast(e.message));toast('+'+m+' min')}
 function manualFor(cid){const i=h('input',{type:'number',min:1,max:600,placeholder:'Minutes'});modal('Log time',i,h('div',{class:'row'},h('button',{class:'p',on:{click:()=>{const v=Math.round(+i.value);if(v>0&&v<=600){addTo(v,cid);closeM()}}}},'Save'),h('button',{on:{click:closeM}},'Cancel')));i.focus()}
-function settings(){const lead=G.leaderId===me.id;
+function settings(){const lead=G.leaderId===me.id;const canDelGroup=lead||(me&&me.admin);
  const mem=lead?[h('strong',{},'Members'),...G.members.filter(u=>u!==me.id).map(u=>h('div',{class:'row',style:'justify-content:space-between'},h('span',{},nm(u)),h('span',{class:'row'},h('button',{on:{click:()=>lead2('promote',u,'Make '+nm(u)+' the leader? You will become a regular member.')}},'Make leader'),h('button',{on:{click:()=>reset(u)}},'Reset password'),h('button',{on:{click:()=>lead2('remove',u,'Remove '+nm(u)+' from the group?')}},'Remove'))))]:[];
- modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,h('button',{class:'p',on:{click:closeM}},'Close'))}
+ const delGrpBtn=canDelGroup?h('button',{title:'Delete this entire group forever',style:'color:var(--err,#d33);border-color:var(--err,#d33)',on:{click:async()=>{if(confirm('⚠️ Permanently DELETE this group and EVERYTHING in it?\n\nAll members, sessions, nudges, cheers, PDFs and data will be erased. This CANNOT be undone.')){try{await api('deleteGroup',{gid:G.id});closeM();tab='now';G=null;HIST=null;view='';refresh();toast('Group deleted')}catch(e){toast(e.message)}}}}},'🗑 Permanently delete this group'):null;
+ modal('Settings',h('button',{on:{click:pwForm}},'Change password'),h('button',{on:{click:exportCsv}},'Export my data (CSV)'),h('button',{on:{click:leave}},'Leave group'),...mem,delGrpBtn,h('button',{class:'p',on:{click:closeM}},'Close'))}
 async function lead2(a,u,msg){if(!confirm(msg))return;try{await api(a,{to:u});closeM();refresh();toast('Done')}catch(e){toast(e.message)}}
 async function reset(u){if(!confirm('Reset the password for '+nm(u)+'?'))return;try{const r=await api('resetpw',{to:u});modal('Temporary password',h('div',{},nm(u)+' can log in with:'),h('code',{style:'font-size:20px;user-select:all'},r.temp),h('div',{class:'sub'},'Share it privately. They should change it in Settings after logging in.'),h('button',{class:'p',on:{click:closeM}},'Done'))}catch(e){toast(e.message)}}
 async function leave(){if(!confirm('Leave this group? Your history is kept if you rejoin.'))return;try{await api('leave');closeM();tab='now';HIST=null;view='';refresh()}catch(e){toast(e.message)}}
@@ -308,10 +310,15 @@ function pdfsView(){
 let PREVIEW=null;
 let PUBGROUPS=[];
 let PUBGROUPS_LOADING=false;
+let AM_I_ADMIN=false;
 async function loadPublicGroups(){
  PUBGROUPS_LOADING=true;put($('#pubgroups-list'),h('div',{class:'sub'},'Loading groups...'));
- try{PUBGROUPS=await api('groups',{});}catch(e){PUBGROUPS=[];}
+ try{const r=await api('groups',{});AM_I_ADMIN=!!(r&&r.admin);PUBGROUPS=(r&&r.groups)||r||[];}catch(e){PUBGROUPS=[];AM_I_ADMIN=false;}
  PUBGROUPS_LOADING=false;renderPublicGroups();
+}
+async function deleteGroup(gid,name){
+ if(!confirm('Delete group "'+name+'"?\n\nAll members, sessions, nudges, cheers and PDFs for this group will be permanently erased. This cannot be undone.'))return;
+ try{await api('deleteGroup',{gid});toast('✓ Group "'+name+'" deleted');loadPublicGroups();}catch(e){toast('❌ '+e.message)}
 }
 function renderPublicGroups(){
  const root=$('#pubgroups-list');if(!root)return;
@@ -326,11 +333,14 @@ function renderPublicGroups(){
    h('button',{disabled:'',style:'padding:6px 12px;font-size:0.9rem'},'No contact');
   const doJoin=async()=>{const raw=codeInput.value;const cc=cleanCode(raw);toast('Trying code: '+(cc||'(empty)')+'  — this group code: '+g.id);try{await api('join',{code:raw});toast('✓ Joined with code: '+cc);view='';refresh()}catch(e){toast('❌ '+e.message)}};
   codeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doJoin()});
+  const badge=g.isLeader?h('span',{class:'tag',style:'background:#b58900;color:#fff8dc'},'you own this'):null;
+  const delBtn=g.canDelete?h('button',{title:'Delete this group',on:{click:()=>deleteGroup(g.id,g.name)},style:'padding:6px 10px;font-size:0.85rem;color:var(--err,#d33);border-color:var(--err,#d33)'},'🗑 Delete'):null;
   return h('div',{class:'card',style:'padding:10px 12px;display:grid;gap:8px'},
    h('div',{class:'row',style:'justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap'},
     h('div',{style:'min-width:0;flex:1'},
-     h('strong',{style:'font-size:1rem'},g.name),
-     h('span',{class:'sub',style:'margin-left:8px'},'🎯 '+fmt(g.goal)+'/wk · by '+(g.leaderName||'—')+' · '+g.membersCount+(g.membersCount===1?' member':' members')),
+     h('div',{style:'display:flex;align-items:center;gap:8px;flex-wrap:wrap'},
+      h('strong',{style:'font-size:1rem'},g.name),badge,delBtn),
+     h('span',{class:'sub',style:'margin-left:0'},'🎯 '+fmt(g.goal)+'/wk · by '+(g.leaderName||'—')+' · '+g.membersCount+(g.membersCount===1?' member':' members')),
      h('div',{class:'sub',style:'font-size:0.8rem;opacity:0.8;margin-top:2px'},'Code preview: '+g.id.slice(0,3)+'-'+g.id.slice(3)+' (use full 6 chars)')),
     contactBtn),
    h('div',{class:'row',style:'gap:6px;align-items:center;flex-wrap:wrap'},

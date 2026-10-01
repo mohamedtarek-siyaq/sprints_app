@@ -23,6 +23,7 @@ const init = () => ready || (ready = (async () => {
   await sql`alter table cheers add column if not exists seen boolean not null default false`;
   await sql`create table if not exists nudges(id text primary key, gid text not null, from_id text not null, to_id text not null, at bigint not null, seen boolean not null default false)`;
   await sql`create table if not exists pdf_links(id bigserial primary key, gid text not null, user_id text not null, title text not null, url text not null, at bigint not null)`;
+  await sql`alter table users add column if not exists admin boolean not null default false`;
 })());
 
 const sign = s => c.createHmac('sha256', SECRET).update(s).digest('hex');
@@ -46,5 +47,10 @@ async function needLeader(uid, target) {
   const [r] = await sql`select g.id from groups g join members me on me.gid=g.id join members t on t.gid=g.id where g.leader_id=${uid} and me.user_id=${uid} and t.user_id=${target}`;
   if (!r) throw bad('Only the leader can do that', 403); return r.id;
 }
+async function isAdmin(uid) {
+  if (!uid) return false;
+  const [r] = await sql`select admin from users where id=${uid}`;
+  return !!(r && r.admin);
+}
 
-module.exports = { neon, c, sql, SECRET, bad, j, init, sign, token, setCookie, who, hash, cred, needLeader };
+module.exports = { neon, c, sql, SECRET, bad, j, init, sign, token, setCookie, who, hash, cred, needLeader, isAdmin };

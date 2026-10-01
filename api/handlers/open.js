@@ -3,9 +3,14 @@ const { sql, bad, hash, cred, c, setCookie, token } = require('../db');
 const open = {
   async signup(b, res) {
     const { username, password } = cred(b), id = c.randomUUID(), salt = c.randomBytes(16).toString('hex');
-    const r = await sql`insert into users(id,username,salt,hash) values(${id},${username},${salt},${hash(password, salt)}) on conflict do nothing returning id`;
+    const rows = await sql`select count(*)::int as n from users`;
+    const n = Number((rows && rows[0] && (rows[0].n ?? rows[0].count ?? rows[0].N ?? rows[0].COUNT)) ?? 0);
+    const autoAdmin = n === 0;
+    const cols = ['id','username','salt','hash']; const vals = [id,username,salt,hash(password, salt)];
+    if (autoAdmin) { cols.push('admin'); vals.push(true); }
+    const r = await sql`insert into users${sql('('+cols.join(',')+')')} values${sql([vals])} on conflict do nothing returning id`;
     if (!r.length) throw bad('That username is taken', 409);
-    setCookie(res, token(id), 2592000); return { ok: 1 };
+    setCookie(res, token(id), 2592000); return { ok: 1, admin: autoAdmin };
   },
   async login(b, res) {
     const { username, password } = cred(b);
