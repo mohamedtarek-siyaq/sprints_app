@@ -19,11 +19,16 @@ const authed = {
   async create(uid, b) {
     const name = String(b.name || '').trim().slice(0, 50); if (!name) throw bad('Name your group');
     if ((await sql`select 1 from members where user_id=${uid}`).length) throw bad('You are already in a group');
-    const code = c.randomBytes(4).toString('hex').slice(0, 6);
+    let code; let tries = 0;
+    while (true) {
+      code = c.randomBytes(4).toString('hex').slice(0, 6);
+      if (!(await sql`select 1 from groups where id=${code}`).length) break;
+      if (++tries > 20) throw bad('Try again in a moment');
+    }
     const goalMins = Math.min(6000, Math.max(30, Math.round((+b.goalHours || 15) * 60)));
     const phone = String(b.phone || '').replace(/[^\d+]/g, '').slice(0, 20);
     await sql`insert into groups(id,name,leader_id,goal,days,phone) values(${code},${name},${uid},${goalMins},'[0,1,2,3,4]'::jsonb,${phone||null})`;
-    await sql`insert into members(user_id,gid) values(${uid},${code})`; return { ok: 1 };
+    await sql`insert into members(user_id,gid) values(${uid},${code})`; return { ok: 1, code };
   },
   async groups() {
     const gs = await sql`select id,name,goal,days,phone from groups order by name asc`;
@@ -43,9 +48,13 @@ const authed = {
     return { id: g.id, name: g.name, goal: g.goal, days: g.days, phone: g.phone || null, membersCount: n, leaderName: l ? l.leader_name : null };
   },
   async join(uid, b) {
-    const code = String(b.code || '').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    const raw = String(b.code || '');
+    const code = raw.replace(/[^a-z0-9]/gi,'').toLowerCase();
     if (!code) throw bad('Enter a code');
-    if (!(await sql`select 1 from groups where id=${code}`).length) throw bad('No group with that code', 404);
+    if (!(await sql`select 1 from groups where id=${code}`).length) {
+      const hint = raw !== code ? ` (you entered "${raw}", we looked for "${code}")` : '';
+      throw bad('No group with that code' + hint, 404);
+    }
     await sql`insert into members(user_id,gid) values(${uid},${code}) on conflict do nothing`; return { ok: 1 };
   },
   async save(uid, b) {
@@ -136,7 +145,6 @@ const authed = {
     const [{ n }] = await sql`select count(*)::int as n from members where gid=${m.gid}`;
     if (m.leader_id === uid && n > 1) throw bad('Hand leadership to someone else before leaving');
     await sql`delete from members where user_id=${uid}`;
-    if (n === 1) await sql`delete from groups where id=${m.gid}`;
     return { ok: 1 };
   },
   async remove(uid, b) {

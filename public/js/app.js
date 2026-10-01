@@ -317,19 +317,21 @@ function renderPublicGroups(){
  const root=$('#pubgroups-list');if(!root)return;
  if(PUBGROUPS_LOADING)return;
  if(!PUBGROUPS.length){put(root,h('div',{class:'sub'},'No public groups yet. Create the first one!'));return;}
+ const cleanCode=v=>String(v||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
  const items=PUBGROUPS.map(g=>{
-  const codeInput=h('input',{placeholder:'Paste code from leader',style:'flex:1;min-width:0;font-size:0.9rem;padding:6px 10px'});
+  const codeInput=h('input',{placeholder:'Paste 6-char code from leader',style:'flex:1;min-width:0;font-size:0.9rem;padding:6px 10px'});
   const contactBtn=g.phone?
-   h('a',{href:'https://wa.me/'+g.phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hi! I want to join "'+g.name+'" — please share the invite code and the small fee details.'),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},
+   h('a',{href:'https://wa.me/'+g.phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hi! I want to join "'+g.name+'" (code '+g.id+'). Please confirm the small fee and I\'ll send the payment via WhatsApp.'),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},
     h('button',{style:'padding:6px 12px;font-size:0.9rem'},'📞 Contact')):
    h('button',{disabled:'',style:'padding:6px 12px;font-size:0.9rem'},'No contact');
-  const doJoin=async()=>{try{await api('join',{code:codeInput.value});view='';refresh()}catch(e){toast(e.message)}};
+  const doJoin=async()=>{const raw=codeInput.value;const cc=cleanCode(raw);toast('Trying code: '+(cc||'(empty)')+'  — this group code: '+g.id);try{await api('join',{code:raw});toast('✓ Joined with code: '+cc);view='';refresh()}catch(e){toast('❌ '+e.message)}};
   codeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doJoin()});
   return h('div',{class:'card',style:'padding:10px 12px;display:grid;gap:8px'},
    h('div',{class:'row',style:'justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap'},
     h('div',{style:'min-width:0;flex:1'},
      h('strong',{style:'font-size:1rem'},g.name),
-     h('span',{class:'sub',style:'margin-left:8px'},'🎯 '+fmt(g.goal)+'/wk · by '+(g.leaderName||'—')+' · '+g.membersCount+(g.membersCount===1?' member':' members'))),
+     h('span',{class:'sub',style:'margin-left:8px'},'🎯 '+fmt(g.goal)+'/wk · by '+(g.leaderName||'—')+' · '+g.membersCount+(g.membersCount===1?' member':' members')),
+     h('div',{class:'sub',style:'font-size:0.8rem;opacity:0.8;margin-top:2px'},'Code preview: '+g.id.slice(0,3)+'-'+g.id.slice(3)+' (use full 6 chars)')),
     contactBtn),
    h('div',{class:'row',style:'gap:6px;align-items:center;flex-wrap:wrap'},
     codeInput,
@@ -342,10 +344,12 @@ function gate(){
  const n=h('input',{placeholder:'Group name'});
  const goalH=h('input',{type:'number',min:1,max:100,placeholder:'Weekly goal (hours, e.g. 15)',value:'15'});
  const phone=h('input',{type:'tel',placeholder:'WhatsApp number (e.g. 201012345678)'});
- const quickCode=h('input',{placeholder:'I already have a code'});
- const quickJoin=async()=>{try{await api('join',{code:quickCode.value});view='';refresh()}catch(e){toast(e.message)}};
- const goCreate=async()=>{try{await api('create',{name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()});view='';refresh()}catch(e){toast(e.message)}};
+ const quickCode=h('input',{placeholder:'Paste 6-char code',style:'flex:1'});
+ const cleanCode=v=>String(v||'').replace(/[^a-z0-9]/gi,'').toLowerCase();
+ const quickJoin=async()=>{const raw=quickCode.value;const cc=cleanCode(raw);toast('Trying code: '+(cc||'(empty)'));try{await api('join',{code:raw});toast('✓ Joined with code: '+cc);view='';refresh()}catch(e){toast('❌ '+e.message)}};
+ const goCreate=async()=>{try{const r=await api('create',{name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()});if(r&&r.code)toast('✓ Group created! Your code: '+r.code+' (copies automatically on the next screen)');view='';refresh()}catch(e){toast('❌ '+e.message)}};
  const listRoot=h('div',{id:'pubgroups-list'},h('div',{class:'sub'},'Loading groups...'));
+ quickCode.addEventListener('keydown',e=>{if(e.key==='Enter')quickJoin()});
  $('#app').replaceChildren(
   h('header',{class:'header-top'},h('h1',{},'Cohort'),h('button',{on:{click:logout}},'Log out')),
   h('p',{class:'sub'},'Study together. Small weekly goal, everyone can see progress.'),
@@ -364,7 +368,7 @@ function gate(){
      h('div',{class:'row',style:'gap:6px;flex-wrap:wrap'},quickCode,h('button',{class:'p',on:{click:quickJoin}},'Join now'))),
     h('div',{class:'card',style:'display:grid;gap:10px'},
      h('strong',{},'Browse available groups'),
-     h('div',{class:'sub'},'Pick a group → contact the leader on WhatsApp → agree on a small fee → paste the code they send you to join.'),
+     h('div',{class:'sub'},'Pick a group → contact the leader on WhatsApp → agree on a small fee → paste the 6-char code they send you to join.'),
      listRoot))));
  setTimeout(loadPublicGroups,20);
 }
