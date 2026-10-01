@@ -36,14 +36,15 @@ const authed = {
     return res;
   },
   async preview(uid, b) {
-    const code = String(b.code || '').trim().toLowerCase(); if (!code) throw bad('Code required');
+    const code = String(b.code || '').replace(/[^a-z0-9]/gi,'').toLowerCase(); if (!code) throw bad('Code required');
     const [g] = await sql`select id,name,goal,days,phone from groups where id=${code}`; if (!g) throw bad('No group with that code', 404);
     const [{ n }] = await sql`select count(*)::int as n from members where gid=${code}`;
     const [l] = await sql`select u.username as leader_name from groups gg join users u on u.id=gg.leader_id where gg.id=${g.id}`;
     return { id: g.id, name: g.name, goal: g.goal, days: g.days, phone: g.phone || null, membersCount: n, leaderName: l ? l.leader_name : null };
   },
   async join(uid, b) {
-    const code = String(b.code || '').trim().toLowerCase();
+    const code = String(b.code || '').replace(/[^a-z0-9]/gi,'').toLowerCase();
+    if (!code) throw bad('Enter a code');
     if (!(await sql`select 1 from groups where id=${code}`).length) throw bad('No group with that code', 404);
     await sql`insert into members(user_id,gid) values(${uid},${code}) on conflict do nothing`; return { ok: 1 };
   },

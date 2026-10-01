@@ -93,14 +93,21 @@ function render(){
  const lead=G.leaderId===me.id;
  const feed=[];for(const uid of G.members)for(const s of ((M[uid]||{}).sessions||[]))if(Date.now()-s.s<6048e5){const co=(M[uid].courses||[]).find(c=>(c.sessions||[]).some(x=>x.s===s.s));feed.push({uid,...s,c:co&&co.course?co.course.title:null});}
  feed.sort((x,y)=>y.s-x.s);
+ const codeDisp=G.code?(G.code.slice(0,3)+'-'+G.code.slice(3)):'';
+ const copyCode=()=>{try{navigator.clipboard.writeText(G.code);toast('✓ Code copied: '+G.code)}catch(e){toast(G.code)}};
  put(a,
   h('header',{},
    h('div',{class:'header-top'},
-    h('div',{},h('h1',{},G.name),h('div',{class:'sub'},'Code: '+G.code+' · Goal '+fmt(G.goal)+'/week'+(G.monthGoal?' · '+Math.round(G.monthGoal/60)+'h/month':''))),
+    h('div',{},
+     h('h1',{},G.name),
+     h('div',{class:'sub'},'🎯 Goal '+fmt(G.goal)+'/week'+(G.monthGoal?' · '+Math.round(G.monthGoal/60)+'h/month':'')),
+     h('div',{style:'margin-top:8px;padding:8px 12px;border:1.5px solid var(--border,#d4c9a8);border-radius:8px;background:var(--bg-soft,#fdf6e3);display:inline-flex;align-items:center;gap:10px'},
+      h('span',{class:'sub'},'Invite code:'),
+      h('span',{style:'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1.25rem;font-weight:700;letter-spacing:2px;color:var(--text,#1a1a1a);user-select:all'},codeDisp),
+      h('button',{class:'p',on:{click:copyCode},style:'padding:4px 10px;font-size:0.85rem'},'📋 Copy'))),
     h('div',{class:'row'},
      h('button',{on:{click:bell}},'🔔 '+(N.length+C.length)),
      lead?h('button',{on:{click:goalForm}},'Edit goal'):null,
-     h('button',{on:{click:()=>{try{navigator.clipboard.writeText(G.code);toast('Code copied')}catch(e){toast(G.code)}}}},'Copy code'),
      h('button',{on:{click:theme}},'◐ Theme'),h('button',{'aria-label':'Settings',on:{click:settings}},'⚙'),h('button',{on:{click:logout}},'Log out'))),
    h('div',{class:'header-nav'},nav())),
   tab==='now'&&recap(),
@@ -311,23 +318,24 @@ function renderPublicGroups(){
  if(PUBGROUPS_LOADING)return;
  if(!PUBGROUPS.length){put(root,h('div',{class:'sub'},'No public groups yet. Create the first one!'));return;}
  const items=PUBGROUPS.map(g=>{
-  const codeInput=h('input',{placeholder:'Paste the code from the leader'});
+  const codeInput=h('input',{placeholder:'Paste code from leader',style:'flex:1;min-width:0;font-size:0.9rem;padding:6px 10px'});
   const contactBtn=g.phone?
-   h('a',{href:'https://wa.me/'+g.phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hi! I want to join '+g.name+' group — please send me the code and the payment details.'),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact leader')):
-   h('button',{disabled:''},'No contact set');
-  return h('div',{class:'card',style:'display:grid;gap:10px'},
-   h('div',{class:'row',style:'justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap'},
-    h('div',{},
-     h('strong',{style:'font-size:1.05rem'},g.name),
-     h('div',{class:'sub'},'Leader: '+(g.leaderName||'—')+' · '+g.membersCount+' member'+(g.membersCount===1?'':'s')),
-     h('div',{class:'sub'},'🎯 Goal: '+fmt(g.goal)+' / week')),
+   h('a',{href:'https://wa.me/'+g.phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hi! I want to join "'+g.name+'" — please share the invite code and the small fee details.'),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},
+    h('button',{style:'padding:6px 12px;font-size:0.9rem'},'📞 Contact')):
+   h('button',{disabled:'',style:'padding:6px 12px;font-size:0.9rem'},'No contact');
+  const doJoin=async()=>{try{await api('join',{code:codeInput.value});view='';refresh()}catch(e){toast(e.message)}};
+  codeInput.addEventListener('keydown',e=>{if(e.key==='Enter')doJoin()});
+  return h('div',{class:'card',style:'padding:10px 12px;display:grid;gap:8px'},
+   h('div',{class:'row',style:'justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap'},
+    h('div',{style:'min-width:0;flex:1'},
+     h('strong',{style:'font-size:1rem'},g.name),
+     h('span',{class:'sub',style:'margin-left:8px'},'🎯 '+fmt(g.goal)+'/wk · by '+(g.leaderName||'—')+' · '+g.membersCount+(g.membersCount===1?' member':' members'))),
     contactBtn),
-   h('div',{class:'sub',style:'margin-top:4px'},'After you agree on a nominal fee via WhatsApp, paste the code the leader sends you below:'),
-   h('div',{class:'row',style:'gap:6px;flex-wrap:wrap'},
+   h('div',{class:'row',style:'gap:6px;align-items:center;flex-wrap:wrap'},
     codeInput,
-    h('button',{class:'p',on:{click:async()=>{try{await api('join',{code:codeInput.value});PREVIEW=null;view='';refresh()}catch(e){toast(e.message)}}}},'✓ Join with code')));
+    h('button',{class:'p',on:{click:doJoin},style:'padding:6px 14px;font-size:0.9rem'},'✓ Join')));
  });
- put(root,h('div',{style:'display:grid;gap:10px'},...items));
+ put(root,h('div',{style:'display:grid;gap:8px'},...items));
 }
 function gate(){
  PREVIEW=null;PUBGROUPS=[];
