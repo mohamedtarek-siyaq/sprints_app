@@ -299,45 +299,67 @@ function pdfsView(){
    h('div',{},'Be the first — click '),h('button',{class:'p',style:'display:inline',on:{click:addForm}},'+ Add link')))}
 
 let PREVIEW=null;
+let PUBGROUPS=[];
+let PUBGROUPS_LOADING=false;
+async function loadPublicGroups(){
+ PUBGROUPS_LOADING=true;put($('#pubgroups-list'),h('div',{class:'sub'},'Loading groups...'));
+ try{PUBGROUPS=await api('groups',{});}catch(e){PUBGROUPS=[];}
+ PUBGROUPS_LOADING=false;renderPublicGroups();
+}
+function renderPublicGroups(){
+ const root=$('#pubgroups-list');if(!root)return;
+ if(PUBGROUPS_LOADING)return;
+ if(!PUBGROUPS.length){put(root,h('div',{class:'sub'},'No public groups yet. Create the first one!'));return;}
+ const items=PUBGROUPS.map(g=>{
+  const codeInput=h('input',{placeholder:'Paste the code from the leader'});
+  const contactBtn=g.phone?
+   h('a',{href:'https://wa.me/'+g.phone.replace(/\D/g,'')+'?text='+encodeURIComponent('Hi! I want to join '+g.name+' group — please send me the code and the payment details.'),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact leader')):
+   h('button',{disabled:''},'No contact set');
+  return h('div',{class:'card',style:'display:grid;gap:10px'},
+   h('div',{class:'row',style:'justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap'},
+    h('div',{},
+     h('strong',{style:'font-size:1.05rem'},g.name),
+     h('div',{class:'sub'},'Leader: '+(g.leaderName||'—')+' · '+g.membersCount+' member'+(g.membersCount===1?'':'s')),
+     h('div',{class:'sub'},'🎯 Goal: '+fmt(g.goal)+' / week')),
+    contactBtn),
+   h('div',{class:'sub',style:'margin-top:4px'},'After you agree on a nominal fee via WhatsApp, paste the code the leader sends you below:'),
+   h('div',{class:'row',style:'gap:6px;flex-wrap:wrap'},
+    codeInput,
+    h('button',{class:'p',on:{click:async()=>{try{await api('join',{code:codeInput.value});PREVIEW=null;view='';refresh()}catch(e){toast(e.message)}}}},'✓ Join with code')));
+ });
+ put(root,h('div',{style:'display:grid;gap:10px'},...items));
+}
 function gate(){
- PREVIEW=null;
+ PREVIEW=null;PUBGROUPS=[];
  const n=h('input',{placeholder:'Group name'});
  const goalH=h('input',{type:'number',min:1,max:100,placeholder:'Weekly goal (hours, e.g. 15)',value:'15'});
  const phone=h('input',{type:'tel',placeholder:'WhatsApp number (e.g. 201012345678)'});
- const c=h('input',{placeholder:'Group code'});
- const previewResult=h('div',{});
- const updatePreview=()=>{
-  if(!PREVIEW){put(previewResult);return}
-  const p=PREVIEW;
-  const contactBtn=p.phone?h('a',{href:'https://wa.me/'+p.phone.replace(/\D/g,''),target:'_blank',rel:'noopener noreferrer',style:'text-decoration:none'},h('button',{},'📞 Contact leader')):h('div',{class:'sub'},'No contact set by leader — ask them for the code directly.');
-  put(previewResult,
-   h('div',{class:'card',style:'margin-top:8px;display:grid;gap:8px'},
-    h('div',{class:'row',style:'justify-content:space-between'},
-     h('strong',{},p.name),
-     h('span',{class:'tag'},p.membersCount+' member'+(p.membersCount===1?'':'s'))),
-    h('div',{class:'sub'},'Goal: '+fmt(p.goal)+'/week · Leader: '+(p.leaderName||'—')),
-    contactBtn,
-    h('button',{class:'p',on:{click:async()=>{try{await api('join',{code:p.id});PREVIEW=null;view='';refresh()}catch(e){toast(e.message)}}}},'✓ Join this group')));
- };
- updatePreview();
+ const quickCode=h('input',{placeholder:'I already have a code'});
+ const quickJoin=async()=>{try{await api('join',{code:quickCode.value});view='';refresh()}catch(e){toast(e.message)}};
  const goCreate=async()=>{try{await api('create',{name:n.value,goalHours:+goalH.value||15,phone:phone.value.trim()});view='';refresh()}catch(e){toast(e.message)}};
- const goPreview=async()=>{try{const r=await api('preview',{code:c.value});PREVIEW=r;updatePreview()}catch(e){PREVIEW=null;updatePreview();toast(e.message)}};
+ const listRoot=h('div',{id:'pubgroups-list'},h('div',{class:'sub'},'Loading groups...'));
  $('#app').replaceChildren(
   h('header',{class:'header-top'},h('h1',{},'Cohort'),h('button',{on:{click:logout}},'Log out')),
   h('p',{class:'sub'},'Study together. Small weekly goal, everyone can see progress.'),
   h('div',{class:'grid'},
-   h('div',{class:'card',style:'display:grid;gap:10px'},
-    h('strong',{},'Create a group'),
-    n,
-    h('label',{},'Weekly goal (hours)'),goalH,
-    h('label',{},'WhatsApp contact number (so others can request the code)'),phone,
-    h('button',{class:'p',on:{click:goCreate}},'Create')),
-   h('div',{class:'card',style:'display:grid;gap:10px'},
-    h('strong',{},'Preview & join a group'),
-    h('div',{class:'sub'},'Enter the group code to see details and contact the leader for the code.'),
-    c,
-    h('button',{class:'p',on:{click:goPreview}},'Preview group'),
-    previewResult)))}
+   h('div',{style:'display:grid;gap:10px'},
+    h('div',{class:'card',style:'display:grid;gap:10px'},
+     h('strong',{},'Create a group'),
+     n,
+     h('label',{},'Weekly goal (hours)'),goalH,
+     h('label',{},'WhatsApp number (so members can contact you for the code & fee)'),phone,
+     h('button',{class:'p',on:{click:goCreate}},'Create group'),
+     h('div',{class:'sub'},'You will be the leader. Set your WhatsApp so people can message you to get the join code after paying a small fee you agree on.'))),
+   h('div',{style:'display:grid;gap:10px'},
+    h('div',{class:'card',style:'display:grid;gap:10px'},
+     h('strong',{},'Have a code already?'),
+     h('div',{class:'row',style:'gap:6px;flex-wrap:wrap'},quickCode,h('button',{class:'p',on:{click:quickJoin}},'Join now'))),
+    h('div',{class:'card',style:'display:grid;gap:10px'},
+     h('strong',{},'Browse available groups'),
+     h('div',{class:'sub'},'Pick a group → contact the leader on WhatsApp → agree on a small fee → paste the code they send you to join.'),
+     listRoot))));
+ setTimeout(loadPublicGroups,20);
+}
 function auth(){clearInterval(poll);me=null;view='auth';
  const u=h('input',{placeholder:'Username',autocomplete:'username'}),p=h('input',{type:'password',placeholder:'Password (6+ characters)',autocomplete:'current-password'});
  const go=a=>async()=>{try{await api(a,{username:u.value,password:p.value});begin()}catch(e){toast(e.message)}};
